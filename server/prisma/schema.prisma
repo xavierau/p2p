@@ -1,0 +1,203 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  USER
+  VIEWER
+}
+
+model User {
+  id                    Int       @id @default(autoincrement())
+  email                 String    @unique
+  password              String
+  name                  String?
+  role                  UserRole  @default(USER)
+  invoices              Invoice[]
+
+  // Refresh token support
+  refreshToken          String?   @unique
+  refreshTokenExpiresAt DateTime?
+  lastLoginAt           DateTime?
+  loginAttempts         Int       @default(0)
+  lockedUntil           DateTime?
+
+  @@index([refreshToken])
+  @@index([lockedUntil])
+}
+
+model Vendor {
+  id             Int             @id @default(autoincrement())
+  name           String
+  contact        String?
+  deletedAt      DateTime?
+  items          Item[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([deletedAt])
+  @@index([name])
+}
+
+model Item {
+  id           Int                 @id @default(autoincrement())
+  name         String
+  item_code    String?
+  price        Float // Current price
+  vendorId     Int
+  deletedAt    DateTime?
+  vendor       Vendor              @relation(fields: [vendorId], references: [id])
+  invoiceItems InvoiceItem[]
+  priceHistory ItemPriceHistory[]
+  poItems      PurchaseOrderItem[]
+
+  @@unique([vendorId, item_code])
+  @@index([vendorId])
+  @@index([deletedAt])
+  @@index([vendorId, deletedAt])
+}
+
+model ItemPriceHistory {
+  id     Int      @id @default(autoincrement())
+  itemId Int
+  item   Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  price  Float
+  date   DateTime @default(now())
+
+  @@index([itemId])
+  @@index([date])
+  @@index([itemId, date])
+}
+
+model PurchaseOrder {
+  id        Int                 @id @default(autoincrement())
+  vendorId  Int
+  vendor    Vendor              @relation(fields: [vendorId], references: [id])
+  date      DateTime            @default(now())
+  status    String              @default("DRAFT") // DRAFT, SENT, FULFILLED
+  deletedAt DateTime?
+  items     PurchaseOrderItem[]
+  invoices  Invoice[]
+
+  @@index([status])
+  @@index([deletedAt])
+  @@index([date])
+  @@index([vendorId])
+}
+
+model PurchaseOrderItem {
+  id              Int           @id @default(autoincrement())
+  purchaseOrderId Int
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  itemId          Int
+  item            Item          @relation(fields: [itemId], references: [id])
+  quantity        Int
+  price           Float // Price at the time of PO creation
+
+  @@index([purchaseOrderId, itemId]) // JOIN optimization
+}
+
+model Invoice {
+  id              Int            @id @default(autoincrement())
+  date            DateTime       @default(now())
+  status          String         @default("PENDING") // PENDING, APPROVED, REJECTED
+  totalAmount     Float          @default(0)
+  userId          Int?
+  user            User?          @relation(fields: [userId], references: [id])
+  project         String?
+  accountingId    String?
+  syncStatus      String         @default("PENDING") // PENDING, SYNCED, FAILED
+  syncError       String?
+  deletedAt       DateTime?
+  items           InvoiceItem[]
+  purchaseOrderId Int?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+
+  branchId     Int?
+  branch       Branch?     @relation(fields: [branchId], references: [id])
+  departmentId Int?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  costCenterId Int?
+  costCenter   CostCenter? @relation(fields: [costCenterId], references: [id])
+
+  @@index([status])
+  @@index([deletedAt])
+  @@index([date])
+  @@index([syncStatus])
+  @@index([branchId])
+  @@index([departmentId])
+  @@index([costCenterId])
+  @@index([status, deletedAt])
+  @@index([status, date, deletedAt])        // Spending analytics
+  @@index([status, departmentId, deletedAt]) // Department breakdown
+  @@index([status, branchId, deletedAt])     // Branch breakdown
+}
+
+model InvoiceItem {
+  id        Int     @id @default(autoincrement())
+  invoiceId Int
+  invoice   Invoice @relation(fields: [invoiceId], references: [id])
+  itemId    Int
+  item      Item    @relation(fields: [itemId], references: [id])
+  quantity  Int
+  price     Float // Price at the time of invoice
+
+  @@index([invoiceId])
+  @@index([itemId])
+  @@index([invoiceId, itemId]) // JOIN optimization
+}
+
+model IntegrationConfig {
+  id      Int     @id @default(autoincrement())
+  key     String  @unique // e.g. "XERO"
+  enabled Boolean @default(false)
+  config  String? // JSON stringified credentials
+}
+
+model Branch {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  invoices Invoice[]
+}
+
+model Department {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  costCenters CostCenter[]
+  invoices    Invoice[]
+}
+
+model CostCenter {
+  id           Int        @id @default(autoincrement())
+  name         String     @unique
+  departmentId Int
+  department   Department @relation(fields: [departmentId], references: [id])
+  invoices     Invoice[]
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?
+  action    String
+  entity    String
+  entityId  Int
+  changes   String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+  @@index([entity, entityId, createdAt]) // Entity history queries
+}

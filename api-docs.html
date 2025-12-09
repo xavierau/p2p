@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Management API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            font-weight: 700;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            margin: 0.5rem 0 0 0;
+            font-size: 1.1rem;
+            opacity: 0.95;
+        }
+
+        .info-banner {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 1rem 2rem;
+            margin: 1rem auto;
+            max-width: 1200px;
+        }
+
+        .info-banner h3 {
+            margin: 0 0 0.5rem 0;
+            color: #667eea;
+        }
+
+        .info-banner ul {
+            margin: 0.5rem 0;
+            padding-left: 1.5rem;
+        }
+
+        .info-banner code {
+            background: #e9ecef;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            color: #764ba2;
+        }
+
+        #swagger-ui {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .swagger-ui .topbar {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h1>🚀 Payment Management API</h1>
+        <p>Complete API Documentation with Interactive Testing</p>
+    </div>
+
+    <div class="info-banner">
+        <h3>📋 Quick Start Guide</h3>
+        <ul>
+            <li><strong>Authentication:</strong> Most endpoints require a JWT token. Use <code>/auth/login</code> to
+                obtain one.</li>
+            <li><strong>Base URL:</strong> <code>http://localhost:3000/api</code></li>
+            <li><strong>Filtering:</strong> Vendors and Items support advanced filtering with operators:
+                <ul>
+                    <li><code>=</code> - Exact match</li>
+                    <li><code>contains</code> - Fuzzy search (case-insensitive)</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h3>🔍 Filtering Examples</h3>
+        <ul>
+            <li><strong>Vendors by name:</strong> <code>GET /vendors?name=tech&nameOperator=contains</code></li>
+            <li><strong>Items by vendor ID:</strong> <code>GET /items?vendorId=1&vendorIdOperator==</code></li>
+            <li><strong>Items by vendor name:</strong>
+                <code>GET /items?vendorName=tech&vendorNameOperator=contains</code></li>
+        </ul>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.5/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function () {
+            const ui = SwaggerUIBundle({
+                url: './openapi.yaml',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                defaultModelsExpandDepth: 1,
+                defaultModelExpandDepth: 1,
+                docExpansion: 'list',
+                filter: true,
+                tryItOutEnabled: true,
+                persistAuthorization: true
+            });
+
+            window.ui = ui;
+        };
+    </script>
+</body>
+
+</html>

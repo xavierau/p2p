@@ -1,0 +1,526 @@
+{
+    "info": {
+        "name": "Payment Management API",
+        "description": "API collection for testing the Payment Management application",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:3000/api",
+            "type": "string"
+        },
+        {
+            "key": "adminToken",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "userToken",
+            "value": "",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "Authentication",
+            "item": [
+                {
+                    "name": "Register",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/register",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "register"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Login",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"password123\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/login",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Forgot Password",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"admin@example.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/auth/forgot-password",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "auth",
+                                "forgot-password"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Vendors",
+            "item": [
+                {
+                    "name": "List Vendors",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/vendors?page=1&limit=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "vendors"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Filter Vendors by ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/vendors?id=1&idOperator==",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "vendors"
+                            ],
+                            "query": [
+                                {
+                                    "key": "id",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "idOperator",
+                                    "value": "="
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Filter Vendors by Name (Fuzzy)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/vendors?name=tech&nameOperator=contains",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "vendors"
+                            ],
+                            "query": [
+                                {
+                                    "key": "name",
+                                    "value": "tech"
+                                },
+                                {
+                                    "key": "nameOperator",
+                                    "value": "contains"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Filter Vendors by Name (Exact)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/vendors?name=TechCorp&nameOperator==",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "vendors"
+                            ],
+                            "query": [
+                                {
+                                    "key": "name",
+                                    "value": "TechCorp"
+                                },
+                                {
+                                    "key": "nameOperator",
+                                    "value": "="
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Vendor",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"New Vendor\",\n  \"contact\": \"contact@newvendor.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/vendors",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "vendors"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Items",
+            "item": [
+                {
+                    "name": "List Items",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/items?page=1&limit=10",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "items"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "10"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Filter Items by Vendor ID",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/items?vendorId=1&vendorIdOperator==",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "items"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vendorId",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "vendorIdOperator",
+                                    "value": "="
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Filter Items by Vendor Name (Fuzzy)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/items?vendorName=tech&vendorNameOperator=contains",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "items"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vendorName",
+                                    "value": "tech"
+                                },
+                                {
+                                    "key": "vendorNameOperator",
+                                    "value": "contains"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Filter Items by Vendor Name (Exact)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/items?vendorName=TechCorp&vendorNameOperator==",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "items"
+                            ],
+                            "query": [
+                                {
+                                    "key": "vendorName",
+                                    "value": "TechCorp"
+                                },
+                                {
+                                    "key": "vendorNameOperator",
+                                    "value": "="
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Item",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"name\": \"Keyboard\",\n  \"price\": 75.00,\n  \"vendorId\": 1\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/items",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "items"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Invoices",
+            "item": [
+                {
+                    "name": "List Invoices",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/invoices",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "invoices"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Create Invoice",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"items\": [\n    {\n      \"itemId\": 1,\n      \"quantity\": 2,\n      \"price\": 1200.00\n    },\n    {\n      \"itemId\": 2,\n      \"quantity\": 5,\n      \"price\": 25.50\n    }\n  ]\n}"
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/invoices",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "invoices"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Approve Invoice",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/invoices/1/approve",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "invoices",
+                                "1",
+                                "approve"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Reject Invoice",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{adminToken}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/invoices/1/reject",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "invoices",
+                                "1",
+                                "reject"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}
