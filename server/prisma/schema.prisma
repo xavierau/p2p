@@ -18,22 +18,42 @@ enum UserRole {
 }
 
 model User {
-  id                    Int       @id @default(autoincrement())
-  email                 String    @unique
+  id                    Int              @id @default(autoincrement())
+  email                 String           @unique
   password              String
   name                  String?
-  role                  UserRole  @default(USER)
+  role                  UserRole         @default(USER)
   invoices              Invoice[]
+  mcpApiTokens          McpApiToken[]
+  uploadedFiles         FileAttachment[]
 
   // Refresh token support
-  refreshToken          String?   @unique
+  refreshToken          String?          @unique
   refreshTokenExpiresAt DateTime?
   lastLoginAt           DateTime?
-  loginAttempts         Int       @default(0)
+  loginAttempts         Int              @default(0)
   lockedUntil           DateTime?
 
   @@index([refreshToken])
   @@index([lockedUntil])
+}
+
+model McpApiToken {
+  id          Int       @id @default(autoincrement())
+  name        String    // User-provided name (e.g., "Claude Desktop")
+  tokenHash   String    // bcrypt hash of the token (for verification)
+  lookupHash  String?   @unique // SHA-256 hash (for O(1) lookup) - nullable for migration
+  tokenPrefix String    // First 12 chars for display (without ellipsis - UI adds it)
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  revokedAt   DateTime? // Soft delete - when null, token is active
+
+  @@index([userId])
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
 }
 
 model Vendor {
@@ -43,22 +63,24 @@ model Vendor {
   deletedAt      DateTime?
   items          Item[]
   purchaseOrders PurchaseOrder[]
+  deliveryNotes  DeliveryNote[]
 
   @@index([deletedAt])
   @@index([name])
 }
 
 model Item {
-  id           Int                 @id @default(autoincrement())
-  name         String
-  item_code    String?
-  price        Float // Current price
-  vendorId     Int
-  deletedAt    DateTime?
-  vendor       Vendor              @relation(fields: [vendorId], references: [id])
-  invoiceItems InvoiceItem[]
-  priceHistory ItemPriceHistory[]
-  poItems      PurchaseOrderItem[]
+  id                Int                 @id @default(autoincrement())
+  name              String
+  item_code         String?
+  price             Float // Current price
+  vendorId          Int
+  deletedAt         DateTime?
+  vendor            Vendor              @relation(fields: [vendorId], references: [id])
+  invoiceItems      InvoiceItem[]
+  priceHistory      ItemPriceHistory[]
+  poItems           PurchaseOrderItem[]
+  deliveryNoteItems DeliveryNoteItem[]
 
   @@unique([vendorId, item_code])
   @@index([vendorId])
@@ -79,14 +101,15 @@ model ItemPriceHistory {
 }
 
 model PurchaseOrder {
-  id        Int                 @id @default(autoincrement())
-  vendorId  Int
-  vendor    Vendor              @relation(fields: [vendorId], references: [id])
-  date      DateTime            @default(now())
-  status    String              @default("DRAFT") // DRAFT, SENT, FULFILLED
-  deletedAt DateTime?
-  items     PurchaseOrderItem[]
-  invoices  Invoice[]
+  id            Int                 @id @default(autoincrement())
+  vendorId      Int
+  vendor        Vendor              @relation(fields: [vendorId], references: [id])
+  date          DateTime            @default(now())
+  status        String              @default("DRAFT") // DRAFT, SENT, FULFILLED
+  deletedAt     DateTime?
+  items         PurchaseOrderItem[]
+  invoices      Invoice[]
+  deliveryNotes DeliveryNote[]
 
   @@index([status])
   @@index([deletedAt])
@@ -107,20 +130,21 @@ model PurchaseOrderItem {
 }
 
 model Invoice {
-  id              Int            @id @default(autoincrement())
-  date            DateTime       @default(now())
-  status          String         @default("PENDING") // PENDING, APPROVED, REJECTED
-  totalAmount     Float          @default(0)
+  id              Int                   @id @default(autoincrement())
+  date            DateTime              @default(now())
+  status          String                @default("PENDING") // PENDING, APPROVED, REJECTED
+  totalAmount     Float                 @default(0)
   userId          Int?
-  user            User?          @relation(fields: [userId], references: [id])
+  user            User?                 @relation(fields: [userId], references: [id])
   project         String?
   accountingId    String?
-  syncStatus      String         @default("PENDING") // PENDING, SYNCED, FAILED
+  syncStatus      String                @default("PENDING") // PENDING, SYNCED, FAILED
   syncError       String?
   deletedAt       DateTime?
   items           InvoiceItem[]
   purchaseOrderId Int?
-  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrder   PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id])
+  deliveryNotes   InvoiceDeliveryLink[]
 
   branchId     Int?
   branch       Branch?     @relation(fields: [branchId], references: [id])
@@ -200,4 +224,170 @@ model AuditLog {
   @@index([createdAt])
   @@index([action])
   @@index([entity, entityId, createdAt]) // Entity history queries
+}
+
+// ============================================
+// DELIVERY NOTE MODELS
+// ============================================
+
+enum DeliveryNoteStatus {
+  DRAFT
+  CONFIRMED
+}
+
+enum ItemCondition {
+  GOOD
+  DAMAGED
+  PARTIAL
+}
+
+model DeliveryNote {
+  id              Int                   @id @default(autoincrement())
+  deliveryDate    DateTime
+  receivedBy      String // Name of person who received goods
+  notes           String?
+  status          DeliveryNoteStatus    @default(DRAFT)
+
+  // Relationships
+  purchaseOrderId Int
+  purchaseOrder   PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id])
+
+  vendorId        Int
+  vendor          Vendor                @relation(fields: [vendorId], references: [id])
+
+  items           DeliveryNoteItem[]
+  invoices        InvoiceDeliveryLink[] // N:N with Invoice
+
+  // Audit
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  createdBy       Int // User ID
+
+  @@index([purchaseOrderId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([deliveryDate])
+}
+
+model DeliveryNoteItem {
+  id                  Int            @id @default(autoincrement())
+
+  deliveryNoteId      Int
+  deliveryNote        DeliveryNote   @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+
+  itemId              Int
+  item                Item           @relation(fields: [itemId], references: [id])
+
+  quantityOrdered     Int // From PO
+  quantityDelivered   Int // Actually received
+  condition           ItemCondition  @default(GOOD)
+  discrepancyReason   String? // If quantityOrdered != quantityDelivered
+
+  // Audit
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([deliveryNoteId])
+  @@index([itemId])
+}
+
+// Join table for Invoice <-> DeliveryNote (N:N)
+model InvoiceDeliveryLink {
+  id              Int          @id @default(autoincrement())
+
+  invoiceId       Int
+  invoice         Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  deliveryNoteId  Int
+  deliveryNote    DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+
+  linkedAt        DateTime     @default(now())
+  linkedBy        Int // User ID
+
+  @@unique([invoiceId, deliveryNoteId])
+  @@index([invoiceId])
+  @@index([deliveryNoteId])
+}
+
+// ============================================
+// FILE ATTACHMENT MODELS
+// ============================================
+
+enum VirusScanStatus {
+  PENDING
+  SCANNING
+  CLEAN
+  INFECTED
+  FAILED
+}
+
+enum AttachableEntityType {
+  PURCHASE_ORDER
+  DELIVERY_NOTE
+  INVOICE
+  VENDOR
+}
+
+model FileAttachment {
+  id              Int                  @id @default(autoincrement())
+  filename        String // Original filename
+  s3Key           String               @unique // UUID-based key in S3
+  contentType     String // MIME type
+  sizeBytes       Int
+  checksum        String               @unique // SHA-256 hash
+
+  virusScanStatus VirusScanStatus      @default(PENDING)
+  virusScanResult String? // Details if INFECTED/FAILED
+
+  uploadedAt      DateTime             @default(now())
+  uploadedBy      Int // User ID
+  uploader        User                 @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  // Relationships
+  links           FileAttachmentLink[]
+  versions        FileVersion[]        @relation("OriginalFile")
+  newVersions     FileVersion[]        @relation("NewVersion")
+
+  @@index([checksum])
+  @@index([uploadedBy])
+  @@index([virusScanStatus])
+}
+
+// Polymorphic join table
+model FileAttachmentLink {
+  id               Int                  @id @default(autoincrement())
+
+  fileAttachmentId Int
+  fileAttachment   FileAttachment       @relation(fields: [fileAttachmentId], references: [id])
+
+  entityType       AttachableEntityType
+  entityId         Int // ID of PO/DN/Invoice/Vendor
+
+  isActive         Boolean              @default(true) // Soft delete
+
+  attachedAt       DateTime             @default(now())
+  attachedBy       Int // User ID
+
+  @@unique([fileAttachmentId, entityType, entityId, isActive]) // Prevent duplicate active links
+  @@index([entityType, entityId, isActive])
+  @@index([fileAttachmentId])
+}
+
+model FileVersion {
+  id                Int            @id @default(autoincrement())
+
+  originalFileId    Int // The very first version's ID
+  originalFile      FileAttachment @relation("OriginalFile", fields: [originalFileId], references: [id])
+
+  newFileId         Int            @unique // The replacement file's ID
+  newFile           FileAttachment @relation("NewVersion", fields: [newFileId], references: [id])
+
+  previousVersionId Int? // NULL for first replacement
+  versionNumber     Int
+
+  replacedAt        DateTime       @default(now())
+  replacedBy        Int // User ID
+
+  @@index([originalFileId])
+  @@unique([originalFileId, versionNumber])
 }

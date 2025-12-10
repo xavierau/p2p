@@ -33,3 +33,14 @@ export const writeLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+export const mcpTokenLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // Limit each IP to 5 token creation requests per hour
+  message: {
+    error: 'Too many token creation requests',
+    retryAfter: 60,
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

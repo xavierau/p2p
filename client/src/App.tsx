@@ -16,6 +16,9 @@ import ItemList from './pages/ItemList';
 import ItemDetail from './pages/ItemDetail';
 import PurchaseOrderList from './pages/PurchaseOrderList';
 import PurchaseOrderDetail from './pages/PurchaseOrderDetail';
+import DeliveryNotes from './pages/DeliveryNotes';
+import DeliveryNoteDetailPage from './pages/DeliveryNoteDetailPage';
+import CreateDeliveryNote from './pages/CreateDeliveryNote';
 import DepartmentList from './pages/DepartmentList';
 import CostCenterList from './pages/CostCenterList';
 import BranchList from './pages/BranchList';
@@ -53,6 +56,9 @@ function App() {
                                         <Route path="/items/:id" element={<Page title="Item Details"><ItemDetail /></Page>} />
                                         <Route path="/purchase-orders" element={<Page title="Purchase Orders"><PurchaseOrderList /></Page>} />
                                         <Route path="/purchase-orders/:id" element={<Page title="Purchase Order Details"><PurchaseOrderDetail /></Page>} />
+                                        <Route path="/delivery-notes" element={<Page title="Delivery Notes"><DeliveryNotes /></Page>} />
+                                        <Route path="/delivery-notes/new" element={<Page title="Create Delivery Note"><CreateDeliveryNote /></Page>} />
+                                        <Route path="/delivery-notes/:id" element={<Page title="Delivery Note Details"><DeliveryNoteDetailPage /></Page>} />
                                         <Route path="/departments" element={<Page title="Departments"><DepartmentList /></Page>} />
                                         <Route path="/cost-centers" element={<Page title="Cost Centers"><CostCenterList /></Page>} />
                                         <Route path="/branches" element={<Page title="Branches"><BranchList /></Page>} />

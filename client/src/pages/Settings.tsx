@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { PanelLeft, PanelRight } from 'lucide-react';
+import { McpTokenList } from '@/components/mcp-tokens/McpTokenList';
 
 type Section = 'integrations' | 'users' | 'api-keys';
 
@@ -176,17 +177,7 @@ const UsersSection: React.FC = () => {
 }
 
 const ApiKeysSection: React.FC = () => {
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle>API Keys</CardTitle>
-                <CardDescription>Manage API keys for external access.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <p>API key management coming soon.</p>
-            </CardContent>
-        </Card>
-    );
+    return <McpTokenList />;
 }
 
 

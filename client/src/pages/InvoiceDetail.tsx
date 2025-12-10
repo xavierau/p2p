@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import FileUploadZone from '@/components/file-attachments/FileUploadZone';
+import FileList from '@/components/file-attachments/FileList';
 
 /**
  * Formats a number as USD currency
@@ -353,6 +355,29 @@ const InvoiceDetail: React.FC = () => {
               </TableBody>
             </Table>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* File Attachments Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>File Attachments</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Upload zone */}
+          <FileUploadZone
+            entityType="INVOICE"
+            entityId={invoice.id}
+            onUploadComplete={fetchInvoiceData}
+            onError={(err) => setError(err)}
+          />
+
+          {/* Attached files list */}
+          <FileList
+            attachments={invoice.attachments || []}
+            onDetach={fetchInvoiceData}
+            onRefresh={fetchInvoiceData}
+          />
         </CardContent>
       </Card>
 

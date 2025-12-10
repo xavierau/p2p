@@ -28,6 +28,9 @@ import settingsRoutes from './routes/settings';
 import departmentRoutes from './routes/departments';
 import purchaseOrderRoutes from './routes/purchaseOrders';
 import analyticsRoutes from './routes/analytics';
+import mcpTokenRoutes from './routes/mcpTokens';
+import deliveryNoteRoutes from './routes/deliveryNotes';
+import fileAttachmentRoutes from './routes/fileAttachments';
 
 // Load subscribers for event-driven features
 import './subscribers/accounting';
@@ -171,6 +174,9 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/mcp-tokens', mcpTokenRoutes);
+app.use('/api/delivery-notes', deliveryNoteRoutes);
+app.use('/api/files', fileAttachmentRoutes);
 
 // MCP HTTP transport
 app.use('/api', createMcpRouter());

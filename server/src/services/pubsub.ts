@@ -17,6 +17,18 @@ export class PubSubService extends EventEmitter {
     public static readonly INVOICE_APPROVED = 'INVOICE_APPROVED';
     public static readonly PO_STATUS_CHANGED = 'PO_STATUS_CHANGED';
 
+    // Delivery Note events
+    public static readonly DELIVERY_NOTE_CREATED = 'DELIVERY_NOTE_CREATED';
+    public static readonly DELIVERY_NOTE_CONFIRMED = 'DELIVERY_NOTE_CONFIRMED';
+    public static readonly DELIVERY_NOTES_LINKED_TO_INVOICE = 'DELIVERY_NOTES_LINKED_TO_INVOICE';
+
+    // File Attachment events
+    public static readonly FILE_UPLOADED = 'FILE_UPLOADED';
+    public static readonly FILE_ATTACHED = 'FILE_ATTACHED';
+    public static readonly FILE_DETACHED = 'FILE_DETACHED';
+    public static readonly FILE_REPLACED = 'FILE_REPLACED';
+    public static readonly FILE_DELETED = 'FILE_DELETED';
+
     public publish(event: string, data: unknown): void {
         // Only emit if listeners exist (performance optimization)
         if (this.listenerCount(event) > 0) {

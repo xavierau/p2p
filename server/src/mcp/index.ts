@@ -4,11 +4,81 @@ import {
   CallToolRequestSchema,
   CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js';
-import { verifyToken, AuthenticationError } from './auth';
+import { z } from 'zod';
+import { VerifiedUser, AuthenticationError, AuthorizationError } from './auth';
+import { Permission, hasPermission } from '../constants/permissions';
 import * as vendorService from '../services/vendorService';
 import * as itemService from '../services/itemService';
 import * as invoiceService from '../services/invoiceService';
 import * as purchaseOrderService from '../services/purchaseOrderService';
+
+// Session context - bound once at connection time
+export interface SessionContext {
+  user: VerifiedUser;
+  sessionId: string;
+  createdAt: Date;
+}
+
+// Input validation schemas
+const paginationSchema = z.object({
+  page: z.string().regex(/^\d+$/).optional(),
+  limit: z.string().regex(/^\d+$/).optional(),
+});
+
+const vendorFilterSchema = paginationSchema.extend({
+  name: z.string().max(255).optional(),
+  nameOperator: z.enum(['=', 'contains']).optional(),
+});
+
+const itemFilterSchema = paginationSchema.extend({
+  vendorId: z.string().regex(/^\d+$/).optional(),
+  vendorName: z.string().max(255).optional(),
+  vendorNameOperator: z.enum(['=', 'contains']).optional(),
+});
+
+const itemCreateSchema = z.object({
+  name: z.string().min(1).max(255),
+  price: z.number().nonnegative(),
+  vendorId: z.number().int().positive(),
+});
+
+const itemUpdateSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string().min(1).max(255).optional(),
+  price: z.number().nonnegative().optional(),
+  vendorId: z.number().int().positive().optional(),
+});
+
+const invoiceItemSchema = z.object({
+  itemId: z.number().int().positive(),
+  quantity: z.number().int().positive(),
+  price: z.number().nonnegative(),
+});
+
+const invoiceCreateSchema = z.object({
+  items: z.array(invoiceItemSchema).min(1),
+  project: z.string().max(255).optional(),
+  branchId: z.number().int().positive().optional(),
+  departmentId: z.number().int().positive().optional(),
+  costCenterId: z.number().int().positive().optional(),
+});
+
+const invoiceUpdateSchema = z.object({
+  id: z.number().int().positive(),
+  items: z.array(invoiceItemSchema).optional(),
+  project: z.string().max(255).optional(),
+  branchId: z.number().int().positive().optional(),
+  departmentId: z.number().int().positive().optional(),
+  costCenterId: z.number().int().positive().optional(),
+  purchaseOrderId: z.number().int().positive().optional(),
+});
+
+const poFilterSchema = paginationSchema.extend({
+  vendorId: z.string().regex(/^\d+$/).optional(),
+  status: z.enum(['DRAFT', 'SENT', 'FULFILLED']).optional(),
+  startDate: z.string().datetime().optional(),
+  endDate: z.string().datetime().optional(),
+});
 
 const formatResult = (data: unknown): CallToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(data) }],
@@ -16,12 +86,42 @@ const formatResult = (data: unknown): CallToolResult => ({
 
 const formatError = (error: unknown): CallToolResult => {
   if (error instanceof AuthenticationError) {
-    return { content: [{ type: 'text', text: JSON.stringify({ error: error.message, code: 'AUTH_ERROR' }) }], isError: true };
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ error: error.message, code: 'AUTH_ERROR' }) }],
+      isError: true,
+    };
   }
+  if (error instanceof AuthorizationError) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ error: error.message, code: 'FORBIDDEN' }) }],
+      isError: true,
+    };
+  }
+  if (error instanceof z.ZodError) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ error: 'Validation failed', details: error.errors, code: 'VALIDATION_ERROR' }) }],
+      isError: true,
+    };
+  }
+  // Sanitize error - don't leak internal details
   const message = error instanceof Error ? error.message : 'Unknown error';
-  return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }], isError: true };
+  const sanitizedMessage = message.includes('prisma') || message.includes('database')
+    ? 'Database operation failed'
+    : message;
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ error: sanitizedMessage }) }],
+    isError: true,
+  };
 };
 
+// Authorization helper
+const requirePermission = (session: SessionContext, permission: Permission): void => {
+  if (!hasPermission(session.user.role, permission)) {
+    throw new AuthorizationError(`Permission denied: ${permission}`);
+  }
+};
+
+// Tool definitions - NO TOKEN PARAMETER
 const tools = [
   {
     name: 'get_vendors',
@@ -29,13 +129,11 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         name: { type: 'string', description: 'Filter by vendor name' },
         nameOperator: { type: 'string', enum: ['=', 'contains'], description: 'Name match operator' },
         page: { type: 'string', description: 'Page number' },
         limit: { type: 'string', description: 'Items per page' },
       },
-      required: ['token'],
     },
   },
   {
@@ -44,10 +142,9 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         id: { type: 'number', description: 'Vendor ID' },
       },
-      required: ['token', 'id'],
+      required: ['id'],
     },
   },
   {
@@ -56,14 +153,12 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         vendorId: { type: 'string', description: 'Filter by vendor ID' },
         vendorName: { type: 'string', description: 'Fuzzy search by vendor name' },
         vendorNameOperator: { type: 'string', enum: ['=', 'contains'], description: 'Vendor name match operator' },
         page: { type: 'string', description: 'Page number' },
         limit: { type: 'string', description: 'Items per page' },
       },
-      required: ['token'],
     },
   },
   {
@@ -72,10 +167,9 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         id: { type: 'number', description: 'Item ID' },
       },
-      required: ['token', 'id'],
+      required: ['id'],
     },
   },
   {
@@ -84,12 +178,11 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         name: { type: 'string', description: 'Item name' },
         price: { type: 'number', description: 'Item price' },
         vendorId: { type: 'number', description: 'Vendor ID' },
       },
-      required: ['token', 'name', 'price', 'vendorId'],
+      required: ['name', 'price', 'vendorId'],
     },
   },
   {
@@ -98,13 +191,12 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         id: { type: 'number', description: 'Item ID' },
         name: { type: 'string', description: 'New item name' },
         price: { type: 'number', description: 'New price' },
         vendorId: { type: 'number', description: 'New vendor ID' },
       },
-      required: ['token', 'id'],
+      required: ['id'],
     },
   },
   {
@@ -113,7 +205,6 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         items: {
           type: 'array',
           items: {
@@ -132,7 +223,7 @@ const tools = [
         departmentId: { type: 'number', description: 'Department ID' },
         costCenterId: { type: 'number', description: 'Cost center ID' },
       },
-      required: ['token', 'items'],
+      required: ['items'],
     },
   },
   {
@@ -141,7 +232,6 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         id: { type: 'number', description: 'Invoice ID' },
         items: { type: 'array', description: 'New invoice line items' },
         project: { type: 'string', description: 'Project name' },
@@ -150,7 +240,7 @@ const tools = [
         costCenterId: { type: 'number', description: 'Cost center ID' },
         purchaseOrderId: { type: 'number', description: 'Purchase order ID' },
       },
-      required: ['token', 'id'],
+      required: ['id'],
     },
   },
   {
@@ -159,7 +249,6 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         vendorId: { type: 'string', description: 'Filter by vendor ID' },
         status: { type: 'string', enum: ['DRAFT', 'SENT', 'FULFILLED'], description: 'Filter by status' },
         startDate: { type: 'string', description: 'Start date (ISO format)' },
@@ -167,7 +256,6 @@ const tools = [
         page: { type: 'string', description: 'Page number' },
         limit: { type: 'string', description: 'Items per page' },
       },
-      required: ['token'],
     },
   },
   {
@@ -176,117 +264,121 @@ const tools = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        token: { type: 'string', description: 'JWT authentication token' },
         id: { type: 'number', description: 'Purchase order ID' },
       },
-      required: ['token', 'id'],
+      required: ['id'],
     },
   },
 ];
 
 type ToolArgs = Record<string, unknown>;
 
-async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolResult> {
+async function handleToolCall(
+  name: string,
+  args: ToolArgs,
+  session: SessionContext
+): Promise<CallToolResult> {
   try {
-    const token = args.token as string;
-    const user = await verifyToken(token);
-
     switch (name) {
       case 'get_vendors': {
+        requirePermission(session, Permission.VENDOR_READ);
+        const validated = vendorFilterSchema.parse(args);
         const result = await vendorService.getVendors(
-          { name: args.name as string, nameOperator: args.nameOperator as '=' | 'contains' },
-          { page: (args.page as string) ?? '1', limit: (args.limit as string) ?? '10' }
+          { name: validated.name, nameOperator: validated.nameOperator },
+          { page: validated.page ?? '1', limit: validated.limit ?? '10' }
         );
         return formatResult(result);
       }
 
       case 'get_vendor': {
-        const vendor = await vendorService.getVendorById(args.id as number);
-        if (!vendor) return formatResult({ error: 'Vendor not found', id: args.id });
+        requirePermission(session, Permission.VENDOR_READ);
+        const id = z.number().int().positive().parse(args.id);
+        const vendor = await vendorService.getVendorById(id);
+        if (!vendor) return formatResult({ error: 'Vendor not found', id });
         return formatResult(vendor);
       }
 
       case 'get_items': {
+        requirePermission(session, Permission.ITEM_READ);
+        const validated = itemFilterSchema.parse(args);
         const result = await itemService.getItems(
           {
-            vendorId: args.vendorId as string,
-            vendorName: args.vendorName as string,
+            vendorId: validated.vendorId,
+            vendorName: validated.vendorName,
             vendorIdOperator: '=',
-            vendorNameOperator: (args.vendorNameOperator as '=' | 'contains') ?? 'contains',
+            vendorNameOperator: validated.vendorNameOperator ?? 'contains',
           },
-          { page: (args.page as string) ?? '1', limit: (args.limit as string) ?? '10' }
+          { page: validated.page ?? '1', limit: validated.limit ?? '10' }
         );
         return formatResult(result);
       }
 
       case 'get_item': {
-        const item = await itemService.getItemById(args.id as number);
-        if (!item) return formatResult({ error: 'Item not found', id: args.id });
+        requirePermission(session, Permission.ITEM_READ);
+        const id = z.number().int().positive().parse(args.id);
+        const item = await itemService.getItemById(id);
+        if (!item) return formatResult({ error: 'Item not found', id });
         return formatResult(item);
       }
 
       case 'create_item': {
-        const item = await itemService.createItem({
-          name: args.name as string,
-          price: args.price as number,
-          vendorId: args.vendorId as number,
-        });
+        requirePermission(session, Permission.ITEM_CREATE);
+        const validated = itemCreateSchema.parse(args);
+        const item = await itemService.createItem(validated);
         return formatResult({ success: true, item });
       }
 
       case 'update_item': {
-        const updateData: { name?: string; price?: number; vendorId?: number } = {};
-        if (args.name !== undefined) updateData.name = args.name as string;
-        if (args.price !== undefined) updateData.price = args.price as number;
-        if (args.vendorId !== undefined) updateData.vendorId = args.vendorId as number;
-        const item = await itemService.updateItem(args.id as number, updateData);
-        if (!item) return formatResult({ error: 'Item not found', id: args.id });
+        requirePermission(session, Permission.ITEM_UPDATE);
+        const validated = itemUpdateSchema.parse(args);
+        const { id, ...updateData } = validated;
+        const item = await itemService.updateItem(id, updateData);
+        if (!item) return formatResult({ error: 'Item not found', id });
         return formatResult({ success: true, item });
       }
 
       case 'create_invoice': {
-        const invoice = await invoiceService.createInvoice(
-          {
-            items: args.items as Array<{ itemId: number; quantity: number; price: number }>,
-            project: args.project as string,
-            branchId: args.branchId as number,
-            departmentId: args.departmentId as number,
-            costCenterId: args.costCenterId as number,
-          },
-          user.userId
-        );
-        return formatResult({ success: true, invoice: { id: invoice.id, totalAmount: invoice.totalAmount, status: invoice.status } });
+        requirePermission(session, Permission.INVOICE_CREATE);
+        const validated = invoiceCreateSchema.parse(args);
+        const invoice = await invoiceService.createInvoice(validated, session.user.userId);
+        return formatResult({
+          success: true,
+          invoice: { id: invoice.id, totalAmount: invoice.totalAmount, status: invoice.status },
+        });
       }
 
       case 'update_invoice': {
-        const invoice = await invoiceService.updateInvoice(args.id as number, {
-          items: args.items as Array<{ itemId: number; quantity: number; price: number }>,
-          project: args.project as string,
-          branchId: args.branchId as number,
-          departmentId: args.departmentId as number,
-          costCenterId: args.costCenterId as number,
-          purchaseOrderId: args.purchaseOrderId as number,
+        requirePermission(session, Permission.INVOICE_UPDATE);
+        const validated = invoiceUpdateSchema.parse(args);
+        const { id, ...updateData } = validated;
+        const invoice = await invoiceService.updateInvoice(id, updateData);
+        if (!invoice) return formatResult({ error: 'Invoice not found', id });
+        return formatResult({
+          success: true,
+          invoice: { id: invoice.id, totalAmount: invoice.totalAmount, status: invoice.status },
         });
-        if (!invoice) return formatResult({ error: 'Invoice not found', id: args.id });
-        return formatResult({ success: true, invoice: { id: invoice.id, totalAmount: invoice.totalAmount, status: invoice.status } });
       }
 
       case 'get_purchase_orders': {
+        requirePermission(session, Permission.PO_READ);
+        const validated = poFilterSchema.parse(args);
         const result = await purchaseOrderService.getPurchaseOrders(
           {
-            vendorId: args.vendorId as string,
-            status: args.status as 'DRAFT' | 'SENT' | 'FULFILLED',
-            startDate: args.startDate as string,
-            endDate: args.endDate as string,
+            vendorId: validated.vendorId,
+            status: validated.status,
+            startDate: validated.startDate,
+            endDate: validated.endDate,
           },
-          { page: (args.page as string) ?? '1', limit: (args.limit as string) ?? '10' }
+          { page: validated.page ?? '1', limit: validated.limit ?? '10' }
         );
         return formatResult(result);
       }
 
       case 'get_purchase_order': {
-        const po = await purchaseOrderService.getPurchaseOrderById(args.id as number);
-        if (!po) return formatResult({ error: 'Purchase order not found', id: args.id });
+        requirePermission(session, Permission.PO_READ);
+        const id = z.number().int().positive().parse(args.id);
+        const po = await purchaseOrderService.getPurchaseOrderById(id);
+        if (!po) return formatResult({ error: 'Purchase order not found', id });
         return formatResult(po);
       }
 
@@ -298,7 +390,11 @@ async function handleToolCall(name: string, args: ToolArgs): Promise<CallToolRes
   }
 }
 
-export const createMcpServer = (): Server => {
+/**
+ * Creates an MCP server bound to an authenticated session.
+ * All tool calls will use the session's user context for authorization.
+ */
+export const createMcpServer = (session: SessionContext): Server => {
   const server = new Server(
     { name: 'payment-management-mcp', version: '1.0.0' },
     { capabilities: { tools: {} } }
@@ -308,7 +404,26 @@ export const createMcpServer = (): Server => {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    return handleToolCall(name, (args ?? {}) as ToolArgs);
+    return handleToolCall(name, (args ?? {}) as ToolArgs, session);
+  });
+
+  return server;
+};
+
+/**
+ * @deprecated Use createMcpServer(session) instead.
+ * This factory is only for backward compatibility during migration.
+ */
+export const createUnauthenticatedMcpServer = (): Server => {
+  const server = new Server(
+    { name: 'payment-management-mcp', version: '1.0.0' },
+    { capabilities: { tools: {} } }
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+
+  server.setRequestHandler(CallToolRequestSchema, async () => {
+    return formatError(new AuthenticationError('Session not authenticated. Use HTTP transport with Authorization header.'));
   });
 
   return server;

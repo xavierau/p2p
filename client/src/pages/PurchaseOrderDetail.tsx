@@ -21,6 +21,8 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import FileUploadZone from '@/components/file-attachments/FileUploadZone';
+import FileList from '@/components/file-attachments/FileList';
 
 /**
  * Returns the appropriate CSS classes for status badge styling.
@@ -303,6 +305,29 @@ const PurchaseOrderDetail: React.FC = () => {
                             No line items found for this purchase order.
                         </div>
                     )}
+                </CardContent>
+            </Card>
+
+            {/* File Attachments Section */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>File Attachments</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {/* Upload zone */}
+                    <FileUploadZone
+                        entityType="PURCHASE_ORDER"
+                        entityId={purchaseOrder?.id ?? 0}
+                        onUploadComplete={fetchPurchaseOrder}
+                        onError={(err) => setError(err)}
+                    />
+
+                    {/* Attached files list */}
+                    <FileList
+                        attachments={purchaseOrder?.attachments || []}
+                        onDetach={fetchPurchaseOrder}
+                        onRefresh={fetchPurchaseOrder}
+                    />
                 </CardContent>
             </Card>
 

@@ -37,6 +37,20 @@ export enum Permission {
 
   // Department/Branch/Cost Center permissions
   DEPARTMENT_READ = 'DEPARTMENT_READ',
+
+  // Delivery Note permissions
+  DELIVERY_NOTE_READ = 'DELIVERY_NOTE_READ',
+  DELIVERY_NOTE_CREATE = 'DELIVERY_NOTE_CREATE',
+  DELIVERY_NOTE_UPDATE = 'DELIVERY_NOTE_UPDATE',
+  DELIVERY_NOTE_CONFIRM = 'DELIVERY_NOTE_CONFIRM',
+  DELIVERY_NOTE_DELETE = 'DELIVERY_NOTE_DELETE',
+
+  // File Attachment permissions
+  FILE_READ = 'FILE_READ',
+  FILE_UPLOAD = 'FILE_UPLOAD',
+  FILE_ATTACH = 'FILE_ATTACH',
+  FILE_DETACH = 'FILE_DETACH',
+  FILE_DELETE = 'FILE_DELETE',
 }
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
@@ -78,6 +92,20 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
 
     // Department - read only
     Permission.DEPARTMENT_READ,
+
+    // Delivery Note - full access
+    Permission.DELIVERY_NOTE_READ,
+    Permission.DELIVERY_NOTE_CREATE,
+    Permission.DELIVERY_NOTE_UPDATE,
+    Permission.DELIVERY_NOTE_CONFIRM,
+    Permission.DELIVERY_NOTE_DELETE,
+
+    // File Attachment - full access
+    Permission.FILE_READ,
+    Permission.FILE_UPLOAD,
+    Permission.FILE_ATTACH,
+    Permission.FILE_DETACH,
+    Permission.FILE_DELETE,
   ],
 
   [UserRole.USER]: [
@@ -105,6 +133,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
 
     // Department - read only
     Permission.DEPARTMENT_READ,
+
+    // Delivery Note - read, create, update (no delete)
+    Permission.DELIVERY_NOTE_READ,
+    Permission.DELIVERY_NOTE_CREATE,
+    Permission.DELIVERY_NOTE_UPDATE,
+    Permission.DELIVERY_NOTE_CONFIRM,
+
+    // File Attachment - full access
+    Permission.FILE_READ,
+    Permission.FILE_UPLOAD,
+    Permission.FILE_ATTACH,
+    Permission.FILE_DETACH,
   ],
 
   [UserRole.VIEWER]: [
@@ -116,6 +156,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.ANALYTICS_READ,
     Permission.SETTINGS_READ,
     Permission.DEPARTMENT_READ,
+
+    // Delivery Note - read only
+    Permission.DELIVERY_NOTE_READ,
+
+    // File Attachment - read only
+    Permission.FILE_READ,
   ],
 };
 

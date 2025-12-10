@@ -1,6 +1,12 @@
 import jwt from 'jsonwebtoken';
 import prisma from '../prisma';
 import { UserRole } from '@prisma/client';
+import { isMcpToken, verifyMcpToken } from '../services/mcpTokenService';
+import {
+  McpTokenInvalidError,
+  McpTokenExpiredError,
+  McpTokenRevokedError,
+} from '../domain/mcpToken/mcpTokenErrors';
 
 interface JwtPayload {
   userId: number;
@@ -21,11 +27,44 @@ export class AuthenticationError extends Error {
   }
 }
 
+export class AuthorizationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthorizationError';
+  }
+}
+
+/**
+ * Verifies a token and returns the associated user.
+ * Supports both JWT tokens and MCP API tokens.
+ *
+ * MCP tokens start with 'mcp_' prefix and are long-lived tokens
+ * designed for MCP clients like Claude Desktop.
+ */
 export async function verifyToken(token: string): Promise<VerifiedUser> {
   if (!token) {
     throw new AuthenticationError('Token required');
   }
 
+  // Check if this is an MCP token (starts with 'mcp_')
+  if (isMcpToken(token)) {
+    try {
+      return await verifyMcpToken(token);
+    } catch (error) {
+      if (error instanceof McpTokenInvalidError) {
+        throw new AuthenticationError('Invalid MCP token');
+      }
+      if (error instanceof McpTokenExpiredError) {
+        throw new AuthenticationError('MCP token expired');
+      }
+      if (error instanceof McpTokenRevokedError) {
+        throw new AuthenticationError('MCP token has been revoked');
+      }
+      throw new AuthenticationError('MCP token verification failed');
+    }
+  }
+
+  // Standard JWT verification
   if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET not configured');
   }
