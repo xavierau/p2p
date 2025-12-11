@@ -4,10 +4,14 @@ import { authorize } from '../middleware/authorize';
 import { Permission } from '../constants/permissions';
 import * as analyticsService from '../services/analyticsService';
 import { logger } from '../utils/logger';
+import foundationRoutes from './analytics/foundation';
 
 const router = express.Router();
 
 router.use(authenticateToken);
+
+// Mount foundation analytics routes at /api/analytics/foundation
+router.use('/foundation', foundationRoutes);
 
 // GET /api/analytics - Dashboard analytics
 router.get('/', authorize(Permission.ANALYTICS_READ), async (req, res) => {

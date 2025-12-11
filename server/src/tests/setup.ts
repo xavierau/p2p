@@ -37,22 +37,22 @@ vi.mock('../services/pubsub', () => {
 });
 
 // Mock the logger to prevent log output during tests
+const createMockLogger = () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  fatal: vi.fn(),
+  trace: vi.fn(),
+  child: vi.fn(() => createMockLogger()),
+});
+
 vi.mock('../utils/logger', () => {
+  const mockLogger = createMockLogger();
   return {
-    default: {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-      fatal: vi.fn(),
-      child: vi.fn(() => ({
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-        debug: vi.fn(),
-        fatal: vi.fn(),
-      })),
-    },
+    default: mockLogger,
+    logger: mockLogger,
+    createChildLogger: vi.fn(() => createMockLogger()),
   };
 });
 

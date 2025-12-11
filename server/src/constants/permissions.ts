@@ -30,6 +30,8 @@ export enum Permission {
 
   // Analytics permissions
   ANALYTICS_READ = 'ANALYTICS_READ',
+  ANALYTICS_WRITE = 'ANALYTICS_WRITE',
+  RECOMMENDATION_MANAGE = 'RECOMMENDATION_MANAGE',
 
   // Settings permissions
   SETTINGS_READ = 'SETTINGS_READ',
@@ -84,8 +86,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PO_DELETE,
     Permission.PO_STATUS_CHANGE,
 
-    // Analytics - read only
+    // Analytics - full access including recommendation management
     Permission.ANALYTICS_READ,
+    Permission.ANALYTICS_WRITE,
+    Permission.RECOMMENDATION_MANAGE,
 
     // Settings - read only
     Permission.SETTINGS_READ,
@@ -125,8 +129,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PO_READ,
     Permission.PO_CREATE,
 
-    // Analytics - read only
+    // Analytics - read and manage recommendations
     Permission.ANALYTICS_READ,
+    Permission.RECOMMENDATION_MANAGE,
 
     // Settings - read only
     Permission.SETTINGS_READ,

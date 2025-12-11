@@ -44,3 +44,19 @@ export const mcpTokenLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+/**
+ * Rate limiter for analytics endpoints
+ * Analytics queries can be computationally expensive, so we limit them more strictly
+ * 30 requests per minute per IP
+ */
+export const analyticsLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30, // Limit each IP to 30 analytics requests per minute
+  message: {
+    error: 'Too many analytics requests',
+    retryAfter: 1,
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

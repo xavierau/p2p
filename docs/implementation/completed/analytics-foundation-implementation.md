@@ -5,6 +5,26 @@
 **Start Date**: 2025-12-10
 **Target Completion**: 4 weeks
 **Prerequisites**: Existing system with Invoice, Item, Vendor, Branch, PurchaseOrder models
+**Architecture Review**: Approved with Modifications (2025-12-10)
+
+---
+
+## Architecture Review Requirements
+
+Before starting implementation, ensure you understand these **required changes**:
+
+### Critical Fixes (Must Address)
+1. **DDD Structure**: Create `domain/analytics/` with entities, repositories, services, events
+2. **No Singletons**: Use dependency injection via constructor for all services
+3. **SpendingMetric Unique Key**: Use `dimensionHash` column instead of composite unique on nullable fields
+4. **Bull Job Naming**: Use `job.name` for job routing, not just `jobId`
+5. **Transaction Safety**: Wrap multi-step operations in `prisma.$transaction()`
+
+### Important Additions
+1. **Zod Schemas**: Add `schemas/analytics.schema.ts` for API validation
+2. **ICacheService Interface**: Abstract cache to support node-cache and Redis
+3. **Error Classes**: Add `errors/AnalyticsError.ts`
+4. **Separate Queues**: Use 3 Bull queues (aggregation, pattern, recommendations)
 
 ---
 
@@ -34,7 +54,7 @@ cd server && pnpm dev    # Terminal 1
 
 ---
 
-## Phase 1: Database Schema & Infrastructure Setup (Week 1, Days 1-5)
+## Phase 1: Database Schema, Domain Layer & Infrastructure Setup (Week 1, Days 1-5)
 
 ### 1.1 Database Schema - Analytics Tables
 
@@ -43,6 +63,10 @@ cd server && pnpm dev    # Terminal 1
     ```prisma
     model SpendingMetric {
       id             Int      @id @default(autoincrement())
+
+      // ARCHITECTURE FIX: Use dimension hash for uniqueness instead of composite key with NULLs
+      // PostgreSQL treats NULL != NULL, so composite unique on nullable fields doesn't work properly
+      dimensionHash  String   @unique // SHA256 of concatenated dimension values
 
       // Dimensions
       date           DateTime // Day-level granularity
@@ -74,6 +98,8 @@ cd server && pnpm dev    # Terminal 1
       @@index([departmentId, date])
     }
     ```
+
+    > **NOTE**: The `dimensionHash` is computed as: `SHA256(date|itemId|vendorId|branchId|departmentId|costCenterId)` where NULL values are represented as 'null' string.
   - [ ] Create `PurchasePattern` model
     ```prisma
     model PurchasePattern {
@@ -240,12 +266,18 @@ cd server && pnpm dev    # Terminal 1
   ```typescript
   import Redis from 'ioredis';
   import { logger } from '../../utils/logger';
+  import { ICacheService } from '../../domain/analytics/services/ICacheService';
 
-  export class RedisService {
+  /**
+   * Redis implementation of ICacheService
+   * ARCHITECTURE: Implements interface to allow swapping implementations
+   */
+  export class RedisService implements ICacheService {
     private client: Redis;
     private pubClient: Redis;
     private subClient: Redis;
 
+    // ARCHITECTURE FIX: Accept dependencies via constructor (no singleton)
     constructor(redisUrl: string) {
       this.client = new Redis(redisUrl);
       this.pubClient = new Redis(redisUrl);
@@ -345,11 +377,19 @@ cd server && pnpm dev    # Terminal 1
     }
   }
 
-  // Singleton instance
-  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-  export const redisService = new RedisService(redisUrl);
-  export default redisService;
+  // ARCHITECTURE FIX: Factory function instead of singleton
+  // Allows dependency injection and easier testing
+  export function createRedisService(redisUrl?: string): RedisService {
+    const url = redisUrl || process.env.REDIS_URL || 'redis://localhost:6379';
+    return new RedisService(url);
+  }
+
+  // For backward compatibility during migration - REMOVE after migration complete
+  // export const redisService = createRedisService();
+  // export default redisService;
   ```
+
+  > **ARCHITECTURE NOTE**: Do NOT export a singleton instance. Services should be instantiated via factory function or dependency injection container.
 
 - [ ] Update `.env` file
   ```
@@ -539,7 +579,207 @@ cd server && pnpm dev    # Terminal 1
 
 ---
 
-### 1.5 Configuration Updates
+### 1.5 Domain Layer Setup (NEW - Architecture Requirement)
+
+- [ ] Create domain layer directory structure:
+  ```bash
+  mkdir -p server/src/domain/analytics/{entities,value-objects,repositories,services,events}
+  ```
+
+- [ ] Create `server/src/domain/analytics/services/ICacheService.ts`
+  ```typescript
+  /**
+   * Cache service interface - allows swapping between node-cache and Redis
+   * ARCHITECTURE: Abstracts caching to enable migration without code changes
+   */
+  export interface ICacheService {
+    get<T>(key: string): Promise<T | null>;
+    set(key: string, value: unknown, ttl?: number): Promise<void>;
+    del(key: string): Promise<void>;
+    invalidateByPrefix(prefix: string): Promise<void>;
+    ping(): Promise<boolean>;
+  }
+  ```
+
+- [ ] Create `server/src/domain/analytics/services/IAggregationService.ts`
+  ```typescript
+  export interface IAggregationService {
+    computeDailySpendingMetrics(date: Date): Promise<void>;
+    computePriceBenchmarks(date: Date): Promise<void>;
+    refreshMaterializedViews(): Promise<void>;
+  }
+  ```
+
+- [ ] Create `server/src/domain/analytics/services/IPatternRecognitionService.ts`
+  ```typescript
+  import { PurchasePattern } from '@prisma/client';
+
+  export interface IPatternRecognitionService {
+    analyzePurchasePattern(itemId: number, branchId?: number): Promise<PurchasePattern | null>;
+    predictNextOrder(itemId: number, branchId?: number): Promise<Date | null>;
+    detectAnomalies(itemId: number, branchId?: number): Promise<Anomaly[]>;
+  }
+
+  export interface Anomaly {
+    invoiceId: number;
+    invoiceDate: Date;
+    quantity: number;
+    amount: number;
+    expectedQuantity: number;
+    expectedAmount: number;
+    quantityDeviation: number;
+    amountDeviation: number;
+    type: 'QUANTITY_ANOMALY' | 'AMOUNT_ANOMALY';
+  }
+  ```
+
+- [ ] Create `server/src/domain/analytics/services/ICrossLocationService.ts`
+  ```typescript
+  export interface ICrossLocationService {
+    getPriceVariance(itemId: number, vendorId?: number): Promise<PriceVarianceResult[]>;
+    getBenchmarkStats(itemId: number): Promise<BenchmarkStats | null>;
+    compareSpendingByBranch(startDate: Date, endDate: Date, itemId?: number): Promise<BranchSpending[]>;
+    findConsolidationOpportunities(): Promise<ConsolidationOpportunity[]>;
+  }
+
+  export interface PriceVarianceResult {
+    itemId: number;
+    itemName: string;
+    vendorId: number;
+    vendorName: string;
+    branches: BranchPrice[];
+    networkAvgPrice: number;
+    networkMinPrice: number;
+    networkMaxPrice: number;
+    maxVariance: number;
+  }
+
+  export interface BranchPrice {
+    branchId: number | null;
+    branchName: string;
+    price: number;
+    varianceFromAvg: number;
+  }
+
+  export interface BenchmarkStats {
+    itemId: number;
+    avgPrice: number;
+    minPrice: number;
+    maxPrice: number;
+    priceRange: number;
+    branchCount: number;
+  }
+
+  export interface BranchSpending {
+    branchId: number;
+    branchName: string;
+    totalAmount: number;
+    invoiceCount: number;
+  }
+
+  export interface ConsolidationOpportunity {
+    itemId: number;
+    itemName: string;
+    branchCount: number;
+    vendorCount: number;
+    totalSpending: number;
+    branches: Array<{
+      branchId: number | null;
+      branchName: string | undefined;
+      vendorId: number | null;
+      vendorName: string | undefined;
+      totalAmount: number;
+    }>;
+  }
+  ```
+
+- [ ] Create `server/src/domain/analytics/events/AnalyticsEvents.ts`
+  ```typescript
+  export const AnalyticsEvents = {
+    SPENDING_METRICS_COMPUTED: 'analytics.spending-metrics-computed',
+    PRICE_BENCHMARKS_COMPUTED: 'analytics.price-benchmarks-computed',
+    PATTERN_DETECTED: 'analytics.pattern-detected',
+    ANOMALY_DETECTED: 'analytics.anomaly-detected',
+    RECOMMENDATIONS_GENERATED: 'analytics.recommendations-generated',
+    RECOMMENDATION_VIEWED: 'analytics.recommendation-viewed',
+    RECOMMENDATION_DISMISSED: 'analytics.recommendation-dismissed',
+    RECOMMENDATION_APPLIED: 'analytics.recommendation-applied',
+  } as const;
+
+  export type AnalyticsEventType = typeof AnalyticsEvents[keyof typeof AnalyticsEvents];
+  ```
+
+- [ ] Create `server/src/errors/AnalyticsError.ts`
+  ```typescript
+  export class AnalyticsError extends Error {
+    constructor(
+      public readonly operation: string,
+      message: string,
+      public readonly cause?: Error
+    ) {
+      super(`Analytics computation failed [${operation}]: ${message}`);
+      this.name = 'AnalyticsError';
+    }
+  }
+
+  export class AggregationError extends AnalyticsError {
+    constructor(operation: string, cause?: Error) {
+      super(operation, 'Aggregation failed', cause);
+      this.name = 'AggregationError';
+    }
+  }
+
+  export class PatternRecognitionError extends AnalyticsError {
+    constructor(operation: string, cause?: Error) {
+      super(operation, 'Pattern recognition failed', cause);
+      this.name = 'PatternRecognitionError';
+    }
+  }
+  ```
+
+- [ ] Create `server/src/schemas/analytics.schema.ts`
+  ```typescript
+  import { z } from 'zod';
+
+  export const SpendingMetricQuerySchema = z.object({
+    startDate: z.string().datetime().optional(),
+    endDate: z.string().datetime().optional(),
+    itemId: z.coerce.number().int().positive().optional(),
+    vendorId: z.coerce.number().int().positive().optional(),
+    branchId: z.coerce.number().int().positive().optional(),
+    departmentId: z.coerce.number().int().positive().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(20),
+  });
+
+  export const PriceVarianceQuerySchema = z.object({
+    itemId: z.coerce.number().int().positive(),
+    vendorId: z.coerce.number().int().positive().optional(),
+  });
+
+  export const PurchasePatternQuerySchema = z.object({
+    itemId: z.coerce.number().int().positive().optional(),
+    branchId: z.coerce.number().int().positive().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(20),
+  });
+
+  export const RecommendationDismissSchema = z.object({
+    reason: z.string().max(500).optional(),
+  });
+
+  export type SpendingMetricQuery = z.infer<typeof SpendingMetricQuerySchema>;
+  export type PriceVarianceQuery = z.infer<typeof PriceVarianceQuerySchema>;
+  export type PurchasePatternQuery = z.infer<typeof PurchasePatternQuerySchema>;
+  export type RecommendationDismiss = z.infer<typeof RecommendationDismissSchema>;
+  ```
+
+- [ ] Verify: All interfaces compile without errors
+- [ ] Verify: Domain layer follows existing pattern in `domain/delivery/` and `domain/files/`
+
+---
+
+### 1.6 Configuration Updates
 
 - [ ] Update `server/src/config/analytics.ts` (create new file)
   ```typescript
@@ -554,12 +794,15 @@ cd server && pnpm dev    # Terminal 1
       CLEANUP_EXPIRED_RECOMMENDATIONS: '0 1 * * *', // Daily at 1 AM
     },
 
-    // Queue names
+    // ARCHITECTURE FIX: Use separate queues for independent job types
+    // This prevents sequential blocking and allows parallel processing
     QUEUES: {
-      ANALYTICS: 'analytics',
+      AGGREGATION: 'analytics:aggregation',        // spending-metrics, price-benchmarks
+      PATTERN: 'analytics:pattern',                // purchase-patterns, anomalies
+      RECOMMENDATIONS: 'analytics:recommendations', // generate, cleanup
     },
 
-    // Job names
+    // Job names - ARCHITECTURE FIX: These are used as job.name, NOT jobId
     JOBS: {
       COMPUTE_SPENDING_METRICS: 'compute-spending-metrics',
       COMPUTE_PRICE_BENCHMARKS: 'compute-price-benchmarks',
@@ -567,6 +810,16 @@ cd server && pnpm dev    # Terminal 1
       GENERATE_RECOMMENDATIONS: 'generate-recommendations',
       DETECT_ANOMALIES: 'detect-anomalies',
       CLEANUP_EXPIRED_RECOMMENDATIONS: 'cleanup-expired-recommendations',
+    },
+
+    // ARCHITECTURE FIX: Job-specific timeouts (ms)
+    JOB_TIMEOUTS: {
+      COMPUTE_SPENDING_METRICS: 120000,    // 2 minutes
+      COMPUTE_PRICE_BENCHMARKS: 300000,    // 5 minutes (heavy job)
+      ANALYZE_PURCHASE_PATTERNS: 300000,   // 5 minutes (heavy job)
+      GENERATE_RECOMMENDATIONS: 180000,    // 3 minutes
+      DETECT_ANOMALIES: 120000,            // 2 minutes
+      CLEANUP_EXPIRED_RECOMMENDATIONS: 60000, // 1 minute
     },
 
     // Cache TTLs (seconds)
@@ -636,12 +889,23 @@ cd server && pnpm dev    # Terminal 1
 
 - [ ] Create `server/src/services/analytics/aggregationService.ts`
   ```typescript
-  import prisma from '../../prisma';
+  import { PrismaClient } from '@prisma/client';
+  import { createHash } from 'crypto';
   import { logger } from '../../utils/logger';
-  import redisService from '../infrastructure/redisService';
+  import { ICacheService } from '../../domain/analytics/services/ICacheService';
+  import { IAggregationService } from '../../domain/analytics/services/IAggregationService';
+  import { AggregationError } from '../../errors/AnalyticsError';
   import pubsub from '../pubsub';
 
-  export class AggregationService {
+  /**
+   * ARCHITECTURE FIX: Implements interface, accepts dependencies via constructor
+   */
+  export class AggregationService implements IAggregationService {
+    constructor(
+      private readonly prisma: PrismaClient,
+      private readonly cache: ICacheService,
+      private readonly pubsub: typeof pubsub
+    ) {}
     /**
      * Compute daily spending metrics for a specific date
      * Groups by all dimensions: item, vendor, branch, department, cost center
@@ -654,8 +918,9 @@ cd server && pnpm dev    # Terminal 1
       const endOfDay = new Date(date);
       endOfDay.setHours(23, 59, 59, 999);
 
+      // ARCHITECTURE FIX: Use cursor-based batching for large datasets
       // Fetch approved invoices for the date
-      const invoices = await prisma.invoice.findMany({
+      const invoices = await this.prisma.invoice.findMany({
         where: {
           date: {
             gte: startOfDay,
@@ -687,13 +952,15 @@ cd server && pnpm dev    # Terminal 1
 
       for (const invoice of invoices) {
         for (const lineItem of invoice.items) {
-          const key = `${date.toISOString().split('T')[0]}-${lineItem.itemId}-${lineItem.item.vendorId}-${invoice.branchId || 'null'}-${invoice.departmentId || 'null'}-${invoice.costCenterId || 'null'}`;
+          // ARCHITECTURE FIX: Use item.vendor.id instead of item.vendorId
+          const vendorId = lineItem.item.vendor?.id || null;
+          const key = `${date.toISOString().split('T')[0]}-${lineItem.itemId}-${vendorId}-${invoice.branchId || 'null'}-${invoice.departmentId || 'null'}-${invoice.costCenterId || 'null'}`;
 
           if (!metrics.has(key)) {
             metrics.set(key, {
               date: startOfDay,
               itemId: lineItem.itemId,
-              vendorId: lineItem.item.vendorId,
+              vendorId: vendorId,
               branchId: invoice.branchId,
               departmentId: invoice.departmentId,
               costCenterId: invoice.costCenterId,
@@ -711,36 +978,45 @@ cd server && pnpm dev    # Terminal 1
         }
       }
 
-      // Calculate averages and upsert
-      const upsertPromises = Array.from(metrics.values()).map((metric) => {
-        metric.avgUnitPrice = metric.quantity > 0 ? metric.totalAmount / metric.quantity : 0;
+      // ARCHITECTURE FIX: Helper function to compute dimension hash
+      const computeDimensionHash = (metric: any): string => {
+        const hashInput = [
+          metric.date.toISOString(),
+          metric.itemId ?? 'null',
+          metric.vendorId ?? 'null',
+          metric.branchId ?? 'null',
+          metric.departmentId ?? 'null',
+          metric.costCenterId ?? 'null',
+        ].join('|');
+        return createHash('sha256').update(hashInput).digest('hex');
+      };
 
-        return prisma.spendingMetric.upsert({
-          where: {
-            // Composite unique constraint (needs to be added to schema)
-            date_itemId_vendorId_branchId_departmentId_costCenterId: {
-              date: metric.date,
-              itemId: metric.itemId,
-              vendorId: metric.vendorId,
-              branchId: metric.branchId,
-              departmentId: metric.departmentId,
-              costCenterId: metric.costCenterId,
-            },
-          },
-          update: metric,
-          create: metric,
+      // ARCHITECTURE FIX: Wrap in transaction for data integrity
+      await this.prisma.$transaction(async (tx) => {
+        // Delete existing metrics for this date (idempotent)
+        await tx.spendingMetric.deleteMany({
+          where: { date: startOfDay },
+        });
+
+        // Insert new metrics with dimension hash
+        const metricsToCreate = Array.from(metrics.values()).map((metric) => {
+          metric.avgUnitPrice = metric.quantity > 0 ? metric.totalAmount / metric.quantity : 0;
+          metric.dimensionHash = computeDimensionHash(metric);
+          return metric;
+        });
+
+        await tx.spendingMetric.createMany({
+          data: metricsToCreate,
         });
       });
-
-      await Promise.all(upsertPromises);
 
       logger.info({ metricCount: metrics.size }, 'Daily spending metrics computed');
 
       // Invalidate cache
-      await redisService.invalidateByPrefix('analytics:spending-metrics');
+      await this.cache.invalidateByPrefix('analytics:spending-metrics');
 
       // Publish event
-      pubsub.publish(pubsub.SPENDING_METRICS_COMPUTED, { date });
+      this.pubsub.publish(this.pubsub.SPENDING_METRICS_COMPUTED, { date });
     }
 
     /**
@@ -862,16 +1138,17 @@ cd server && pnpm dev    # Terminal 1
     }
   }
 
-  export const aggregationService = new AggregationService();
-  export default aggregationService;
+  // ARCHITECTURE FIX: Factory function for dependency injection
+  export function createAggregationService(
+    prisma: PrismaClient,
+    cache: ICacheService,
+    pubsubService: typeof pubsub
+  ): AggregationService {
+    return new AggregationService(prisma, cache, pubsubService);
+  }
   ```
 
-- [ ] Update Prisma schema to add composite unique constraint to SpendingMetric:
-  ```prisma
-  @@unique([date, itemId, vendorId, branchId, departmentId, costCenterId], name: "date_itemId_vendorId_branchId_departmentId_costCenterId")
-  ```
-
-- [ ] Run migration: `npx prisma migrate dev --name add-spending-metric-unique-constraint`
+  > **ARCHITECTURE NOTE**: The `dimensionHash` column replaces the composite unique constraint on nullable fields. See Phase 1 schema update.
 
 - [ ] Create unit tests: `server/src/services/analytics/__tests__/aggregationService.test.ts`
   - [ ] Test: `computeDailySpendingMetrics` aggregates correctly
@@ -1006,6 +1283,7 @@ cd server && pnpm dev    # Terminal 1
 
     /**
      * Detect order cycle from historical invoice items
+     * ARCHITECTURE FIX: Guard against division by zero and edge cases
      */
     detectOrderCycle(invoiceItems: any[]): OrderCycleResult {
       // Calculate time between orders
@@ -1017,22 +1295,34 @@ cd server && pnpm dev    # Terminal 1
         cycleDays.push(daysDiff);
       }
 
-      const avgCycleDays = cycleDays.reduce((a, b) => a + b, 0) / cycleDays.length;
+      // ARCHITECTURE FIX: Guard against empty arrays and division by zero
+      const avgCycleDays = cycleDays.length > 0
+        ? cycleDays.reduce((a, b) => a + b, 0) / cycleDays.length
+        : 0;
 
       // Calculate quantity and amount stats
       const quantities = invoiceItems.map(item => item.quantity);
       const amounts = invoiceItems.map(item => item.price * item.quantity);
 
-      const avgQuantity = quantities.reduce((a, b) => a + b, 0) / quantities.length;
-      const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+      // ARCHITECTURE FIX: Guard against empty arrays
+      const avgQuantity = quantities.length > 0
+        ? quantities.reduce((a, b) => a + b, 0) / quantities.length
+        : 0;
+      const avgAmount = amounts.length > 0
+        ? amounts.reduce((a, b) => a + b, 0) / amounts.length
+        : 0;
 
-      const stdDevQuantity = Math.sqrt(
-        quantities.reduce((sum, q) => sum + Math.pow(q - avgQuantity, 2), 0) / quantities.length
-      );
+      const stdDevQuantity = quantities.length > 0
+        ? Math.sqrt(
+            quantities.reduce((sum, q) => sum + Math.pow(q - avgQuantity, 2), 0) / quantities.length
+          )
+        : 0;
 
-      const stdDevAmount = Math.sqrt(
-        amounts.reduce((sum, a) => sum + Math.pow(a - avgAmount, 2), 0) / amounts.length
-      );
+      const stdDevAmount = amounts.length > 0
+        ? Math.sqrt(
+            amounts.reduce((sum, a) => sum + Math.pow(a - avgAmount, 2), 0) / amounts.length
+          )
+        : 0;
 
       // Detect trend (increasing/decreasing)
       const recentQuantities = quantities.slice(-5);
@@ -1047,10 +1337,13 @@ cd server && pnpm dev    # Terminal 1
       const isDecreasing = recentAvg < olderAvg * 0.9; // 10% decrease
 
       // Confidence score based on consistency
-      const cycleDaysStdDev = Math.sqrt(
-        cycleDays.reduce((sum, c) => sum + Math.pow(c - avgCycleDays, 2), 0) / cycleDays.length
-      );
-      const cycleDaysCV = cycleDaysStdDev / avgCycleDays; // Coefficient of variation
+      // ARCHITECTURE FIX: Guard against division by zero in coefficient of variation
+      const cycleDaysStdDev = cycleDays.length > 0
+        ? Math.sqrt(
+            cycleDays.reduce((sum, c) => sum + Math.pow(c - avgCycleDays, 2), 0) / cycleDays.length
+          )
+        : 0;
+      const cycleDaysCV = avgCycleDays > 0 ? cycleDaysStdDev / avgCycleDays : 1; // Coefficient of variation
       const confidenceScore = Math.max(0, Math.min(1, 1 - cycleDaysCV)); // 0-1 scale
 
       return {
@@ -2006,80 +2299,113 @@ cd server && pnpm dev    # Terminal 1
   import { logger } from '../../utils/logger';
 
   export function setupAnalyticsJobs(): void {
-    logger.info('Setting up analytics job queue');
+    logger.info('Setting up analytics job queues');
 
-    // Create analytics queue
-    const queue = jobQueueService.createQueue(AnalyticsConfig.QUEUES.ANALYTICS);
+    // ARCHITECTURE FIX: Create separate queues for independent job types
+    const aggregationQueue = jobQueueService.createQueue(AnalyticsConfig.QUEUES.AGGREGATION);
+    const patternQueue = jobQueueService.createQueue(AnalyticsConfig.QUEUES.PATTERN);
+    const recommendationsQueue = jobQueueService.createQueue(AnalyticsConfig.QUEUES.RECOMMENDATIONS);
 
-    // Register processors
-    jobQueueService.registerProcessor(
-      AnalyticsConfig.QUEUES.ANALYTICS,
-      1, // Concurrency: 1 job at a time
-      async (job) => {
-        switch (job.name) {
-          case AnalyticsConfig.JOBS.COMPUTE_SPENDING_METRICS:
-            return computeSpendingMetricsJob(job);
-          case AnalyticsConfig.JOBS.COMPUTE_PRICE_BENCHMARKS:
-            return computePriceBenchmarksJob(job);
-          case AnalyticsConfig.JOBS.ANALYZE_PURCHASE_PATTERNS:
-            return analyzePurchasePatternsJob(job);
-          case AnalyticsConfig.JOBS.GENERATE_RECOMMENDATIONS:
-            return generateRecommendationsJob(job);
-          case AnalyticsConfig.JOBS.DETECT_ANOMALIES:
-            return detectAnomaliesJob(job);
-          case AnalyticsConfig.JOBS.CLEANUP_EXPIRED_RECOMMENDATIONS:
-            return cleanupExpiredRecommendationsJob(job);
-          default:
-            throw new Error(`Unknown job: ${job.name}`);
-        }
-      }
+    // Register processors for aggregation queue
+    // ARCHITECTURE FIX: Use job name for routing (not jobId)
+    aggregationQueue.process(
+      AnalyticsConfig.JOBS.COMPUTE_SPENDING_METRICS,
+      1, // Concurrency
+      computeSpendingMetricsJob
+    );
+    aggregationQueue.process(
+      AnalyticsConfig.JOBS.COMPUTE_PRICE_BENCHMARKS,
+      1,
+      computePriceBenchmarksJob
+    );
+
+    // Register processors for pattern queue
+    patternQueue.process(
+      AnalyticsConfig.JOBS.ANALYZE_PURCHASE_PATTERNS,
+      1,
+      analyzePurchasePatternsJob
+    );
+    patternQueue.process(
+      AnalyticsConfig.JOBS.DETECT_ANOMALIES,
+      1,
+      detectAnomaliesJob
+    );
+
+    // Register processors for recommendations queue
+    recommendationsQueue.process(
+      AnalyticsConfig.JOBS.GENERATE_RECOMMENDATIONS,
+      1,
+      generateRecommendationsJob
+    );
+    recommendationsQueue.process(
+      AnalyticsConfig.JOBS.CLEANUP_EXPIRED_RECOMMENDATIONS,
+      1,
+      cleanupExpiredRecommendationsJob
     );
 
     // Schedule recurring jobs
     if (process.env.ANALYTICS_JOBS_ENABLED === 'true') {
-      jobQueueService.addRecurringJob(
-        AnalyticsConfig.QUEUES.ANALYTICS,
-        AnalyticsConfig.SCHEDULES.COMPUTE_SPENDING_METRICS,
-        {},
-        { jobId: AnalyticsConfig.JOBS.COMPUTE_SPENDING_METRICS }
+      // ARCHITECTURE FIX: Use job name as first argument to queue.add()
+      // The job name is what appears in Bull Board and is used for routing
+
+      // Aggregation jobs
+      aggregationQueue.add(
+        AnalyticsConfig.JOBS.COMPUTE_SPENDING_METRICS, // job name
+        {}, // data
+        {
+          repeat: { cron: AnalyticsConfig.SCHEDULES.COMPUTE_SPENDING_METRICS },
+          timeout: AnalyticsConfig.JOB_TIMEOUTS.COMPUTE_SPENDING_METRICS,
+        }
       );
 
-      jobQueueService.addRecurringJob(
-        AnalyticsConfig.QUEUES.ANALYTICS,
-        AnalyticsConfig.SCHEDULES.COMPUTE_PRICE_BENCHMARKS,
+      aggregationQueue.add(
+        AnalyticsConfig.JOBS.COMPUTE_PRICE_BENCHMARKS,
         {},
-        { jobId: AnalyticsConfig.JOBS.COMPUTE_PRICE_BENCHMARKS }
+        {
+          repeat: { cron: AnalyticsConfig.SCHEDULES.COMPUTE_PRICE_BENCHMARKS },
+          timeout: AnalyticsConfig.JOB_TIMEOUTS.COMPUTE_PRICE_BENCHMARKS,
+        }
       );
 
-      jobQueueService.addRecurringJob(
-        AnalyticsConfig.QUEUES.ANALYTICS,
-        AnalyticsConfig.SCHEDULES.ANALYZE_PURCHASE_PATTERNS,
+      // Pattern jobs
+      patternQueue.add(
+        AnalyticsConfig.JOBS.ANALYZE_PURCHASE_PATTERNS,
         {},
-        { jobId: AnalyticsConfig.JOBS.ANALYZE_PURCHASE_PATTERNS }
+        {
+          repeat: { cron: AnalyticsConfig.SCHEDULES.ANALYZE_PURCHASE_PATTERNS },
+          timeout: AnalyticsConfig.JOB_TIMEOUTS.ANALYZE_PURCHASE_PATTERNS,
+        }
       );
 
-      jobQueueService.addRecurringJob(
-        AnalyticsConfig.QUEUES.ANALYTICS,
-        AnalyticsConfig.SCHEDULES.GENERATE_RECOMMENDATIONS,
+      patternQueue.add(
+        AnalyticsConfig.JOBS.DETECT_ANOMALIES,
         {},
-        { jobId: AnalyticsConfig.JOBS.GENERATE_RECOMMENDATIONS }
+        {
+          repeat: { cron: AnalyticsConfig.SCHEDULES.DETECT_ANOMALIES },
+          timeout: AnalyticsConfig.JOB_TIMEOUTS.DETECT_ANOMALIES,
+        }
       );
 
-      jobQueueService.addRecurringJob(
-        AnalyticsConfig.QUEUES.ANALYTICS,
-        AnalyticsConfig.SCHEDULES.DETECT_ANOMALIES,
+      // Recommendation jobs
+      recommendationsQueue.add(
+        AnalyticsConfig.JOBS.GENERATE_RECOMMENDATIONS,
         {},
-        { jobId: AnalyticsConfig.JOBS.DETECT_ANOMALIES }
+        {
+          repeat: { cron: AnalyticsConfig.SCHEDULES.GENERATE_RECOMMENDATIONS },
+          timeout: AnalyticsConfig.JOB_TIMEOUTS.GENERATE_RECOMMENDATIONS,
+        }
       );
 
-      jobQueueService.addRecurringJob(
-        AnalyticsConfig.QUEUES.ANALYTICS,
-        AnalyticsConfig.SCHEDULES.CLEANUP_EXPIRED_RECOMMENDATIONS,
+      recommendationsQueue.add(
+        AnalyticsConfig.JOBS.CLEANUP_EXPIRED_RECOMMENDATIONS,
         {},
-        { jobId: AnalyticsConfig.JOBS.CLEANUP_EXPIRED_RECOMMENDATIONS }
+        {
+          repeat: { cron: AnalyticsConfig.SCHEDULES.CLEANUP_EXPIRED_RECOMMENDATIONS },
+          timeout: AnalyticsConfig.JOB_TIMEOUTS.CLEANUP_EXPIRED_RECOMMENDATIONS,
+        }
       );
 
-      logger.info('Analytics recurring jobs scheduled');
+      logger.info('Analytics recurring jobs scheduled on 3 separate queues');
     } else {
       logger.warn('Analytics jobs disabled (ANALYTICS_JOBS_ENABLED=false)');
     }
@@ -2434,8 +2760,9 @@ cd server && pnpm dev    # Terminal 1
     }
   });
 
-  // POST /api/recommendations/:id/view
-  router.post('/:id/view', authorize(Permission.ANALYTICS_READ), async (req, res) => {
+  // ARCHITECTURE FIX: Use PATCH for state changes per REST conventions
+  // PATCH /api/recommendations/:id/view
+  router.patch('/:id/view', authorize(Permission.ANALYTICS_READ), async (req, res) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -2449,24 +2776,28 @@ cd server && pnpm dev    # Terminal 1
     }
   });
 
-  // POST /api/recommendations/:id/dismiss
-  router.post('/:id/dismiss', authorize(Permission.ANALYTICS_READ), async (req, res) => {
+  // PATCH /api/recommendations/:id/dismiss
+  router.patch('/:id/dismiss', authorize(Permission.ANALYTICS_READ), async (req, res) => {
     try {
       const { id } = req.params;
-      const { reason } = req.body;
+      // ARCHITECTURE FIX: Validate input with Zod
+      const { reason } = RecommendationDismissSchema.parse(req.body);
       const userId = (req as any).user.id;
 
       const recommendation = await recommendationService.dismiss(parseInt(id), userId, reason);
 
       res.json(recommendation);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: 'Invalid input', details: error.errors });
+      }
       logger.error({ error }, 'Failed to dismiss recommendation');
       res.status(500).json({ error: 'Failed to dismiss recommendation' });
     }
   });
 
-  // POST /api/recommendations/:id/apply
-  router.post('/:id/apply', authorize(Permission.ANALYTICS_READ), async (req, res) => {
+  // PATCH /api/recommendations/:id/apply
+  router.patch('/:id/apply', authorize(Permission.ANALYTICS_READ), async (req, res) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -2482,6 +2813,8 @@ cd server && pnpm dev    # Terminal 1
 
   export default router;
   ```
+
+  > **ARCHITECTURE NOTE**: State change endpoints use PATCH instead of POST per REST conventions. Add Zod validation imports: `import { z } from 'zod'; import { RecommendationDismissSchema } from '../schemas/analytics.schema';`
 
 ---
 
