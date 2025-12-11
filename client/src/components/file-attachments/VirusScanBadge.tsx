@@ -1,6 +1,6 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, AlertTriangle, Clock, Shield, XCircle, Loader2 } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Clock, XCircle, Loader2 } from 'lucide-react';
 import type { VirusScanStatus } from '@/types';
 
 interface VirusScanBadgeProps {

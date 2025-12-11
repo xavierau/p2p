@@ -10,7 +10,6 @@ import type {
   InitiateUploadResponse,
   ConfirmUploadInput,
   AttachFileInput,
-  DetachFileInput,
   DownloadFileResponse,
   AttachableEntityType,
 } from '@/types';

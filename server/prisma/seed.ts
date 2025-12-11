@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { seedValidationRules } from './seed-validation-rules';
 
 const prisma = new PrismaClient();
 
@@ -30,6 +31,9 @@ async function main() {
     });
 
     console.log({ admin, user });
+
+    // Seed validation rules
+    await seedValidationRules();
 
     // Create Vendors
     const vendor1 = await prisma.vendor.create({

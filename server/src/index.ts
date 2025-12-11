@@ -31,10 +31,12 @@ import analyticsRoutes from './routes/analytics';
 import mcpTokenRoutes from './routes/mcpTokens';
 import deliveryNoteRoutes from './routes/deliveryNotes';
 import fileAttachmentRoutes from './routes/fileAttachments';
+import validationRoutes from './routes/validations';
 
 // Load subscribers for event-driven features
 import './subscribers/accounting';
 import './subscribers/cacheInvalidator';
+import { initializeValidationSubscribers } from './subscribers/invoiceValidation.subscriber';
 
 // ============================================================================
 // Critical Configuration Validation (MUST happen before server starts)
@@ -177,6 +179,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/mcp-tokens', mcpTokenRoutes);
 app.use('/api/delivery-notes', deliveryNoteRoutes);
 app.use('/api/files', fileAttachmentRoutes);
+app.use('/api/validations', validationRoutes);
 
 // MCP HTTP transport
 app.use('/api', createMcpRouter());
@@ -194,6 +197,9 @@ app.use(errorHandler);
 let server: Server;
 
 const startServer = (): void => {
+  // Initialize event subscribers
+  initializeValidationSubscribers();
+
   server = app.listen(PORT, () => {
     logger.info({ port: PORT }, 'Server started');
     logger.info({ endpoint: `http://localhost:${PORT}/api/mcp` }, 'MCP HTTP endpoint available');

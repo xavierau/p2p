@@ -105,8 +105,8 @@ Later:     Invoice Validation (independent feature)
 **Business Value**: Prevent duplicate invoices, detect fraud
 
 #### Documentation
-- **[Invoice Validation Index](./backlog/invoice-validation-index.md)** - Feature overview & doc links
-- **[Implementation Checklist](./backlog/invoice-validation-checklist.md)** - Step-by-step tasks
+- **[Invoice Validation Index](current/invoice-validation-index.md)** - Feature overview & doc links
+- **[Implementation Checklist](current/invoice-validation-checklist.md)** - Step-by-step tasks
 
 #### Key Deliverables
 - Duplicate invoice prevention (critical flag)
@@ -129,9 +129,9 @@ Later:     Invoice Validation (independent feature)
 **Blocks**: All 3 analytics features (P2a, P2b, P2c)
 
 #### Documentation
-- **[Quick Start Guide](./backlog/ANALYTICS_FOUNDATION_START_HERE.md)** - 5-minute setup
-- **[Implementation Plan](./backlog/analytics-foundation-implementation.md)** - Detailed 20-day plan
-- **[Sprint Roadmap](./backlog/analytics-foundation-roadmap.md)** - Week-by-week breakdown
+- **[Quick Start Guide](completed/ANALYTICS_FOUNDATION_START_HERE.md)** - 5-minute setup
+- **[Implementation Plan](completed/analytics-foundation-implementation.md)** - Detailed 20-day plan
+- **[Sprint Roadmap](completed/analytics-foundation-roadmap.md)** - Week-by-week breakdown
 
 #### Key Deliverables
 - **4 Prisma Models**: SpendingMetric, PurchasePattern, PriceSnapshot, Recommendation
@@ -295,7 +295,7 @@ Parallel Execution Rules:
 ### Phase 1: Priority 0 (Optional - Can Do First or Last)
 - [ ] Move `invoice-validation-*` docs to `/current/`
 - [ ] Begin Invoice Validation implementation
-- [ ] Follow [Implementation Checklist](./backlog/invoice-validation-checklist.md)
+- [ ] Follow [Implementation Checklist](current/invoice-validation-checklist.md)
 - [ ] Complete 8 implementation phases
 - [ ] Verify acceptance criteria
 - [ ] Move docs to `/completed/` when done
@@ -303,7 +303,7 @@ Parallel Execution Rules:
 ### Phase 2: Priority 1 (MUST DO BEFORE P2 FEATURES)
 - [ ] Move `analytics-foundation-*` docs to `/current/`
 - [ ] Begin Analytics Foundation implementation
-- [ ] Follow [Implementation Plan](./backlog/analytics-foundation-implementation.md)
+- [ ] Follow [Implementation Plan](completed/analytics-foundation-implementation.md)
 - [ ] Complete 4-week implementation (database → services → jobs → APIs)
 - [ ] Verify all foundation services operational
 - [ ] Generate 7+ days of analytics data for testing
@@ -378,17 +378,17 @@ Parallel Execution Rules:
 ## Quick Links
 
 ### Current Work
-- **[Analytics Features Index](./current/analytics-features-index.md)** - Overview of analytics suite
+- **[Analytics Features Index](backlog/analytics-features-index.md)** - Overview of analytics suite
 
 ### Backlog (Ready to Implement)
 - **Invoice Validation**:
-  - [Index](./backlog/invoice-validation-index.md)
-  - [Checklist](./backlog/invoice-validation-checklist.md)
+  - [Index](current/invoice-validation-index.md)
+  - [Checklist](current/invoice-validation-checklist.md)
 
 - **Analytics Foundation**:
-  - [Quick Start](./backlog/ANALYTICS_FOUNDATION_START_HERE.md)
-  - [Implementation](./backlog/analytics-foundation-implementation.md)
-  - [Roadmap](./backlog/analytics-foundation-roadmap.md)
+  - [Quick Start](completed/ANALYTICS_FOUNDATION_START_HERE.md)
+  - [Implementation](completed/analytics-foundation-implementation.md)
+  - [Roadmap](completed/analytics-foundation-roadmap.md)
 
 - **Analytics Features**:
   - [Cross-Location Cost Control](./backlog/feature-cross-location-cost-control.md)

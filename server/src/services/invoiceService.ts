@@ -101,18 +101,31 @@ export const getInvoices = async (
 
 export const createInvoice = async (invoiceData: CreateInvoiceInput, userId: number) => {
     const validatedInvoiceData = createInvoiceSchema.parse(invoiceData);
-    const { items, project, branchId, departmentId, costCenterId } = validatedInvoiceData;
+    const { items, project, branchId, departmentId, costCenterId, invoiceNumber, purchaseOrderId } = validatedInvoiceData;
 
     const totalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
+    // Extract vendorId from first item for validation (denormalized)
+    let vendorId: number | undefined = undefined;
+    if (items.length > 0) {
+        const firstItem = await prisma.item.findUnique({
+            where: { id: items[0].itemId },
+            select: { vendorId: true }
+        });
+        vendorId = firstItem?.vendorId;
+    }
+
     const invoice = await prisma.invoice.create({
         data: {
+            invoiceNumber,
+            vendorId,
             totalAmount,
             userId,
             project,
             branchId,
             departmentId,
             costCenterId,
+            purchaseOrderId,
             items: {
                 create: items.map((item) => ({
                     itemId: item.itemId,
@@ -128,10 +141,29 @@ export const createInvoice = async (invoiceData: CreateInvoiceInput, userId: num
 
     invoicesCreated.inc();
 
+    // Publish event for async validation
+    pubsub.publish(PubSubService.INVOICE_CREATED, invoice.id);
+
     return invoice;
 };
 
 export const approveInvoice = async (invoiceId: number) => {
+    // Check for blocking validations
+    const blockingValidations = await prisma.invoiceValidation.findFirst({
+        where: {
+            invoiceId,
+            severity: 'CRITICAL',
+            status: 'FLAGGED'
+        }
+    });
+
+    if (blockingValidations) {
+        throw new Error(
+            'Cannot approve invoice with critical validation issues. ' +
+            'Please review and override if necessary.'
+        );
+    }
+
     const invoice = await prisma.invoice.update({
         where: { id: invoiceId },
         data: { status: 'APPROVED' },

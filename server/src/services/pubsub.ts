@@ -15,7 +15,14 @@ export class PubSubService extends EventEmitter {
     }
 
     public static readonly INVOICE_APPROVED = 'INVOICE_APPROVED';
+    public static readonly INVOICE_CREATED = 'INVOICE_CREATED';
     public static readonly PO_STATUS_CHANGED = 'PO_STATUS_CHANGED';
+
+    // Validation events
+    public static readonly INVOICE_VALIDATED = 'INVOICE_VALIDATED';
+    public static readonly DUPLICATE_DETECTED = 'DUPLICATE_DETECTED';
+    public static readonly SUSPICIOUS_DETECTED = 'SUSPICIOUS_DETECTED';
+    public static readonly VALIDATION_OVERRIDDEN = 'VALIDATION_OVERRIDDEN';
 
     // Delivery Note events
     public static readonly DELIVERY_NOTE_CREATED = 'DELIVERY_NOTE_CREATED';

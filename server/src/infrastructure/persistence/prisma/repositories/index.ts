@@ -8,3 +8,6 @@ export { PrismaInvoiceDeliveryLinkRepository } from './PrismaInvoiceDeliveryLink
 export { PrismaFileAttachmentRepository } from './PrismaFileAttachmentRepository';
 export { PrismaFileAttachmentLinkRepository } from './PrismaFileAttachmentLinkRepository';
 export { PrismaFileVersionRepository } from './PrismaFileVersionRepository';
+export { PrismaInvoiceRepository } from './PrismaInvoiceRepository';
+export { PrismaValidationRuleRepository } from './PrismaValidationRuleRepository';
+export { PrismaInvoiceValidationRepository } from './PrismaInvoiceValidationRepository';

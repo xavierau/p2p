@@ -38,13 +38,43 @@ Complete 60+ page specification including:
 
 ### ✅ Implementation Guide
 **[Implementation Checklist](invoice-validation-checklist.md)**
-`docs/implementation/invoice-validation-checklist.md`
+`docs/implementation/current/invoice-validation-checklist.md`
 
 Phased task list with:
 - Checkboxes for progress tracking
 - Phase dependencies
 - Verification steps for each task
 - Ready for ticket creation
+
+---
+
+### 📋 Technical Implementation Plan (NEW)
+**[Detailed Implementation Plan](invoice-validation-implementation-plan.md)**
+`docs/implementation/current/invoice-validation-implementation-plan.md`
+
+Comprehensive technical plan (10,000+ words) with:
+- Complete codebase analysis
+- Clean Architecture design with code examples
+- 80+ tasks with dependencies and acceptance criteria
+- Database schema with migrations
+- Backend services with full implementations
+- Frontend components with React code
+- Testing strategy (unit, integration, E2E)
+- Risk mitigation strategies
+
+---
+
+### 📊 Executive Summary (NEW)
+**[Implementation Summary](IMPLEMENTATION_SUMMARY.md)**
+`docs/implementation/current/IMPLEMENTATION_SUMMARY.md`
+
+Quick reference for stakeholders:
+- High-level overview
+- Priority task breakdown
+- Team allocation options (1 dev vs 2 devs)
+- Success metrics and KPIs
+- Getting started guide
+- Top risks and mitigations
 
 ---
 
@@ -89,19 +119,20 @@ High-level summary for stakeholders:
 ## Quick Start
 
 ### For Project Managers
-1. Read: [Executive Overview](../../INVOICE_VALIDATION_README.md)
-2. Review: [Implementation Checklist](invoice-validation-checklist.md)
-3. Create tickets from checklist phases
+1. Read: [Implementation Summary](IMPLEMENTATION_SUMMARY.md) - 5 min overview
+2. Review: [Implementation Checklist](invoice-validation-checklist.md) - Task tracking
+3. Allocate: 4 weeks (1 dev) or 2 weeks (2 devs)
+4. Create tickets from checklist phases
 
 ### For Developers
-1. Read: [Full Technical Specification](../../architecture/2025-12-10-invoice-validation-system.md) (sections 1-6)
+1. Read: [Implementation Plan](invoice-validation-implementation-plan.md) - Complete technical spec
 2. Reference: [Type Definitions](../../../server/src/domain/validation/types.ts)
 3. Keep open: [Quick Reference Guide](../../architecture/invoice-validation-quick-reference.md)
 4. Follow: [Implementation Checklist](invoice-validation-checklist.md)
 
 ### For QA/Testing
-1. Read: [Full Technical Specification](../../architecture/2025-12-10-invoice-validation-system.md) (section 9)
-2. Reference: [API endpoints](../../architecture/invoice-validation-quick-reference.md#api-endpoints)
+1. Read: [Implementation Plan](invoice-validation-implementation-plan.md) - Section 8 (Testing Strategy)
+2. Reference: [API endpoints in plan](invoice-validation-implementation-plan.md#54-rest-api-endpoints)
 3. Track: [Implementation Checklist](invoice-validation-checklist.md)
 
 ---
