@@ -96,6 +96,73 @@ lib/
 - **YAGNI:** Only build what's needed now
 - **Zod Validation:** All API inputs validated via schemas in `schemas.ts`
 
+## Invoice Validation Configuration
+
+The invoice validation system supports runtime configuration via environment variables.
+
+### Configuration Priority
+1. Environment variables (.env) - **Highest priority**
+2. Database (ValidationRule table) - Fallback
+3. Hard-coded defaults - Last resort
+
+### Environment Variables
+
+All validation rules can be configured via `.env`:
+
+```bash
+# Enable/disable rules
+VALIDATION_RULE_DUPLICATE_INVOICE_NUMBER_ENABLED=true
+VALIDATION_RULE_MISSING_INVOICE_NUMBER_ENABLED=false
+VALIDATION_RULE_AMOUNT_THRESHOLD_EXCEEDED_ENABLED=false
+
+# Configure thresholds
+VALIDATION_RULE_AMOUNT_THRESHOLD_EXCEEDED_THRESHOLD=10000
+VALIDATION_RULE_PRICE_VARIANCE_VARIANCE_PERCENT=15
+VALIDATION_RULE_PO_AMOUNT_VARIANCE_VARIANCE_PERCENT=10
+```
+
+See `.env.example` for complete configuration options.
+
+### Default Behavior
+- **DUPLICATE_INVOICE_NUMBER:** ENABLED (critical validation, prevents duplicate vendor invoice numbers)
+- **All other rules:** DISABLED (opt-in for flexibility)
+
+### Development vs Production
+
+**Development:** Keep most rules disabled for faster testing and iteration
+```bash
+VALIDATION_RULE_DUPLICATE_INVOICE_NUMBER_ENABLED=true
+# Other rules disabled for development
+```
+
+**Production:** Enable relevant rules based on business requirements
+```bash
+VALIDATION_RULE_DUPLICATE_INVOICE_NUMBER_ENABLED=true
+VALIDATION_RULE_AMOUNT_THRESHOLD_EXCEEDED_ENABLED=true
+VALIDATION_RULE_AMOUNT_THRESHOLD_EXCEEDED_THRESHOLD=50000
+VALIDATION_RULE_PO_AMOUNT_VARIANCE_ENABLED=true
+VALIDATION_RULE_PO_AMOUNT_VARIANCE_VARIANCE_PERCENT=5
+```
+
+### Important Notes
+- `.env` changes require application restart to take effect
+- Invalid environment variable values log warnings and fall back to database configuration
+- Database ValidationRule records are preserved as fallback when environment variables are not set
+- Environment variables override database settings for both enable/disable flags and rule-specific thresholds
+
+### Available Validation Rules
+
+| Rule Type | Description | Config Variables |
+|-----------|-------------|------------------|
+| DUPLICATE_INVOICE_NUMBER | Prevents duplicate vendor invoice numbers | ENABLED |
+| MISSING_INVOICE_NUMBER | Flags invoices without invoice numbers | ENABLED |
+| AMOUNT_THRESHOLD_EXCEEDED | Flags invoices exceeding amount threshold | ENABLED, THRESHOLD |
+| ROUND_AMOUNT_PATTERN | Detects suspiciously round amounts | ENABLED, MINIMUM_AMOUNT |
+| PRICE_VARIANCE | Detects price variations from historical averages | ENABLED, VARIANCE_PERCENT, HISTORICAL_COUNT |
+| PO_AMOUNT_VARIANCE | Detects invoice/PO amount discrepancies | ENABLED, VARIANCE_PERCENT |
+| PO_ITEM_MISMATCH | Detects invoice items not in linked PO | ENABLED |
+| DELIVERY_NOTE_MISMATCH | Detects invoice items not in delivery notes | ENABLED |
+
 ## Testing Setup (TODO)
 
 No testing framework configured yet. Recommended: **Vitest** for both backend services and React components with React Testing Library.

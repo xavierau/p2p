@@ -19,8 +19,87 @@ import {
 const prismaMock = getPrismaMock();
 
 describe('Invoice Validation Flow Integration Tests', () => {
+  // All validation rules that must be present for ValidationConfigService
+  const allValidationRules = [
+    {
+      id: 1,
+      ruleType: ValidationRuleType.DUPLICATE_INVOICE_NUMBER,
+      severity: ValidationSeverity.CRITICAL,
+      enabled: true,
+      config: {},
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      id: 2,
+      ruleType: ValidationRuleType.MISSING_INVOICE_NUMBER,
+      severity: ValidationSeverity.WARNING,
+      enabled: true,
+      config: {},
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      id: 3,
+      ruleType: ValidationRuleType.AMOUNT_THRESHOLD_EXCEEDED,
+      severity: ValidationSeverity.WARNING,
+      enabled: true,
+      config: { threshold: 10000 },
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      id: 4,
+      ruleType: ValidationRuleType.ROUND_AMOUNT_PATTERN,
+      severity: ValidationSeverity.INFO,
+      enabled: true,
+      config: { minimumAmount: 1000 },
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      id: 5,
+      ruleType: ValidationRuleType.PRICE_VARIANCE,
+      severity: ValidationSeverity.INFO,
+      enabled: true,
+      config: { variancePercent: 15, historicalCount: 5 },
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      id: 6,
+      ruleType: ValidationRuleType.PO_AMOUNT_VARIANCE,
+      severity: ValidationSeverity.WARNING,
+      enabled: true,
+      config: { variancePercent: 10 },
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      id: 7,
+      ruleType: ValidationRuleType.PO_ITEM_MISMATCH,
+      severity: ValidationSeverity.WARNING,
+      enabled: true,
+      config: {},
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      id: 8,
+      ruleType: ValidationRuleType.DELIVERY_NOTE_MISMATCH,
+      severity: ValidationSeverity.WARNING,
+      enabled: true,
+      config: {},
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+  ];
+
   beforeEach(() => {
     vi.clearAllMocks();
+    // Mock all validation rules for ValidationConfigService
+    // This must be set before any test that calls validateInvoice()
+    prismaMock.validationRule.findMany.mockResolvedValue(allValidationRules as any);
   });
 
   describe('Complete Validation Lifecycle', () => {
@@ -65,30 +144,9 @@ describe('Invoice Validation Flow Integration Tests', () => {
         vendor
       };
 
-      const validationRules = [
-        {
-          id: 1,
-          ruleType: ValidationRuleType.MISSING_INVOICE_NUMBER,
-          severity: ValidationSeverity.WARNING,
-          enabled: true,
-          config: {},
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: 2,
-          ruleType: ValidationRuleType.AMOUNT_THRESHOLD_EXCEEDED,
-          severity: ValidationSeverity.WARNING,
-          enabled: true,
-          config: { threshold: 10000 },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
-      ];
-
       // ========== STEP 1: VALIDATE INVOICE ==========
       // Mock repository calls for validation
-      prismaMock.validationRule.findMany.mockResolvedValue(validationRules as any);
+      // validationRule.findMany is already mocked in beforeEach with all rules
       // Mock the findFirst used by PrismaInvoiceRepository.findById
       prismaMock.invoice.findFirst.mockImplementation((args: any) => {
         // If looking for invoice by ID (findById)
@@ -256,7 +314,7 @@ describe('Invoice Validation Flow Integration Tests', () => {
         userId: user.id,
         vendorId: vendor.id,
         invoiceNumber: 'INV-2024-001', // Has invoice number
-        totalAmount: 5000, // Within threshold
+        totalAmount: 5250, // Within threshold and NOT round (avoids ROUND_AMOUNT_PATTERN)
         status: 'PENDING'
       });
 
@@ -277,29 +335,8 @@ describe('Invoice Validation Flow Integration Tests', () => {
         vendor
       };
 
-      const validationRules = [
-        {
-          id: 1,
-          ruleType: ValidationRuleType.MISSING_INVOICE_NUMBER,
-          severity: ValidationSeverity.WARNING,
-          enabled: true,
-          config: {},
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: 2,
-          ruleType: ValidationRuleType.AMOUNT_THRESHOLD_EXCEEDED,
-          severity: ValidationSeverity.WARNING,
-          enabled: true,
-          config: { threshold: 10000 },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
-      ];
-
       // Mock repository calls
-      prismaMock.validationRule.findMany.mockResolvedValue(validationRules as any);
+      // validationRule.findMany is already mocked in beforeEach with all rules
       prismaMock.invoice.findFirst.mockImplementation((args: any) => {
         if (args.where?.id === invoice.id) {
           return Promise.resolve(invoiceWithRelations as any);
@@ -330,7 +367,7 @@ describe('Invoice Validation Flow Integration Tests', () => {
         userId: user.id,
         vendorId: vendor.id,
         invoiceNumber: 'DUP-001', // Duplicate invoice
-        totalAmount: 1000,
+        totalAmount: 1250, // NOT round to avoid ROUND_AMOUNT_PATTERN triggering
         status: 'PENDING'
       });
 
@@ -356,21 +393,9 @@ describe('Invoice Validation Flow Integration Tests', () => {
         invoiceNumber: 'DUP-001',
         vendorId: vendor.id,
         date: new Date('2024-01-15'),
-        totalAmount: 1000,
+        totalAmount: 1250,
         status: 'APPROVED'
       };
-
-      const validationRules = [
-        {
-          id: 1,
-          ruleType: ValidationRuleType.DUPLICATE_INVOICE_NUMBER,
-          severity: ValidationSeverity.CRITICAL,
-          enabled: true,
-          config: {},
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
-      ];
 
       const createdValidations = [
         {
@@ -391,7 +416,7 @@ describe('Invoice Validation Flow Integration Tests', () => {
       ];
 
       // Mock repository calls
-      prismaMock.validationRule.findMany.mockResolvedValue(validationRules as any);
+      // validationRule.findMany is already mocked in beforeEach with all rules
       prismaMock.invoice.findFirst.mockImplementation((args: any) => {
         if (args.where?.id === invoice.id) {
           return Promise.resolve(invoiceWithRelations as any);
@@ -558,27 +583,6 @@ describe('Invoice Validation Flow Integration Tests', () => {
         vendor
       };
 
-      const validationRules = [
-        {
-          id: 1,
-          ruleType: ValidationRuleType.PO_AMOUNT_VARIANCE,
-          severity: ValidationSeverity.WARNING,
-          enabled: true,
-          config: { variancePercent: 10 },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        },
-        {
-          id: 2,
-          ruleType: ValidationRuleType.PO_ITEM_MISMATCH,
-          severity: ValidationSeverity.WARNING,
-          enabled: true,
-          config: {},
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }
-      ];
-
       const createdValidations = [
         {
           id: 1,
@@ -600,7 +604,7 @@ describe('Invoice Validation Flow Integration Tests', () => {
       ];
 
       // Mock repository calls
-      prismaMock.validationRule.findMany.mockResolvedValue(validationRules as any);
+      // validationRule.findMany is already mocked in beforeEach with all rules
       prismaMock.invoice.findFirst.mockImplementation((args: any) => {
         if (args.where?.id === invoice.id) {
           return Promise.resolve(invoiceWithRelations as any);

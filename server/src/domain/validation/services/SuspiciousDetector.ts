@@ -9,49 +9,48 @@ import { POAmountVarianceRule } from '../rules/POAmountVarianceRule';
 import { POItemMismatchRule } from '../rules/POItemMismatchRule';
 import { DeliveryNoteMismatchRule } from '../rules/DeliveryNoteMismatchRule';
 import { PriceVarianceRule } from '../rules/PriceVarianceRule';
-import { ValidationRuleCache } from './ValidationRuleCache';
+import { ValidationConfigService } from './ValidationConfigService';
+import { ValidationRuleType } from '@prisma/client';
 
 export class SuspiciousDetector {
-  constructor(private ruleCache: ValidationRuleCache) {}
+  constructor(private configService: ValidationConfigService) {}
 
   async detectAnomalies(invoice: InvoiceWithRelations, context: ValidationContext): Promise<ValidationResult[]> {
-    // Load active rules from cache (DB query only if cache expired)
-    const activeRules = await this.ruleCache.getEnabledRules();
+    // Load all rule configurations with env overrides applied
+    const allConfigs = await this.configService.getAllRuleConfigs();
 
-    // Create rule instances based on database config
+    // Create rule instances based on merged config (env + database)
     const rules: IValidationRule[] = [];
 
-    for (const ruleConfig of activeRules) {
-      // Skip duplicate rule (handled separately)
-      if (ruleConfig.ruleType === 'DUPLICATE_INVOICE_NUMBER') continue;
+    for (const [ruleType, config] of allConfigs) {
+      // Skip disabled rules
+      if (!config.enabled) continue;
 
-      const config = {
-        enabled: ruleConfig.enabled,
-        severity: ruleConfig.severity,
-        ...(ruleConfig.config as Record<string, unknown>)
-      };
+      // Skip duplicate rule (handled separately by DuplicateDetector)
+      if (ruleType === ValidationRuleType.DUPLICATE_INVOICE_NUMBER) continue;
 
-      switch (ruleConfig.ruleType) {
-        case 'MISSING_INVOICE_NUMBER':
+      // Instantiate rule based on type with merged config
+      switch (ruleType) {
+        case ValidationRuleType.MISSING_INVOICE_NUMBER:
           rules.push(new MissingInvoiceNumberRule(config));
           break;
-        case 'AMOUNT_THRESHOLD_EXCEEDED':
+        case ValidationRuleType.AMOUNT_THRESHOLD_EXCEEDED:
           rules.push(new AmountThresholdExceededRule(config));
           break;
-        case 'ROUND_AMOUNT_PATTERN':
+        case ValidationRuleType.ROUND_AMOUNT_PATTERN:
           rules.push(new RoundAmountPatternRule(config));
           break;
-        case 'PO_AMOUNT_VARIANCE':
+        case ValidationRuleType.PRICE_VARIANCE:
+          rules.push(new PriceVarianceRule(config));
+          break;
+        case ValidationRuleType.PO_AMOUNT_VARIANCE:
           rules.push(new POAmountVarianceRule(config));
           break;
-        case 'PO_ITEM_MISMATCH':
+        case ValidationRuleType.PO_ITEM_MISMATCH:
           rules.push(new POItemMismatchRule(config));
           break;
-        case 'DELIVERY_NOTE_MISMATCH':
+        case ValidationRuleType.DELIVERY_NOTE_MISMATCH:
           rules.push(new DeliveryNoteMismatchRule(config));
-          break;
-        case 'PRICE_VARIANCE':
-          rules.push(new PriceVarianceRule(config));
           break;
       }
     }

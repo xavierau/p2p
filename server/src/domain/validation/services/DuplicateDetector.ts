@@ -3,11 +3,30 @@ import { ValidationContext } from '../types/ValidationContext';
 import { IInvoiceRepository } from '../repositories/IInvoiceRepository';
 import { InvoiceWithRelations } from '../types/Invoice';
 import { ValidationRuleType, ValidationSeverity } from '@prisma/client';
+import { ValidationConfigService } from './ValidationConfigService';
 
 export class DuplicateDetector {
-  constructor(private invoiceRepository: IInvoiceRepository) {}
+  constructor(
+    private invoiceRepository: IInvoiceRepository,
+    private configService?: ValidationConfigService
+  ) {}
 
   async checkDuplicate(invoice: InvoiceWithRelations): Promise<ValidationResult> {
+    // Check if rule is enabled via config service
+    if (this.configService) {
+      const config = await this.configService.getRuleConfig(
+        ValidationRuleType.DUPLICATE_INVOICE_NUMBER
+      );
+
+      if (!config.enabled) {
+        return ValidationResult.passed(
+          ValidationRuleType.DUPLICATE_INVOICE_NUMBER,
+          ValidationSeverity.CRITICAL,
+          { reason: 'Rule disabled via configuration' }
+        );
+      }
+    }
+
     // Skip if no invoice number or vendor ID
     if (!invoice.invoiceNumber || !invoice.vendorId) {
       return ValidationResult.passed(

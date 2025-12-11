@@ -4,7 +4,7 @@ import pubsub, { PubSubService } from './pubsub';
 import { ValidationOrchestrator } from '../domain/validation/services/ValidationOrchestrator';
 import { DuplicateDetector } from '../domain/validation/services/DuplicateDetector';
 import { SuspiciousDetector } from '../domain/validation/services/SuspiciousDetector';
-import { ValidationRuleCache } from '../domain/validation/services/ValidationRuleCache';
+import { ValidationConfigService } from '../domain/validation/services/ValidationConfigService';
 import { PrismaInvoiceRepository } from '../infrastructure/persistence/prisma/repositories/PrismaInvoiceRepository';
 import { PrismaValidationRuleRepository } from '../infrastructure/persistence/prisma/repositories/PrismaValidationRuleRepository';
 import { PrismaInvoiceValidationRepository } from '../infrastructure/persistence/prisma/repositories/PrismaInvoiceValidationRepository';
@@ -18,10 +18,12 @@ export const validateInvoice = async (invoiceId: number) => {
   const validationRuleRepository = new PrismaValidationRuleRepository(prisma);
   const invoiceValidationRepository = new PrismaInvoiceValidationRepository(prisma);
 
-  // Create cache and detectors with repository dependencies
-  const ruleCache = new ValidationRuleCache(validationRuleRepository);
-  const duplicateDetector = new DuplicateDetector(invoiceRepository);
-  const suspiciousDetector = new SuspiciousDetector(ruleCache);
+  // Create ValidationConfigService with rule repository
+  const configService = new ValidationConfigService(validationRuleRepository);
+
+  // Create detectors with config service
+  const duplicateDetector = new DuplicateDetector(invoiceRepository, configService);
+  const suspiciousDetector = new SuspiciousDetector(configService);
 
   // Create orchestrator with all dependencies
   const orchestrator = new ValidationOrchestrator(
