@@ -394,7 +394,7 @@ Production Rollout (staged)
 - [ ] Set up Bull dashboard
 
 ### 3. Sprint 1 (Week 1-2)
-- [ ] Follow [Implementation Roadmap](../implementation/backlog/analytics-foundation-roadmap.md)
+- [ ] Follow [Implementation Roadmap](../implementation/current/analytics-foundation-roadmap.md)
 - [ ] Daily standups
 - [ ] Progress tracking
 
@@ -420,7 +420,7 @@ Production Rollout (staged)
 **Questions about this analysis?**
 - Technical questions: Review [Analytics Infrastructure Foundation](./2025-12-10-analytics-infrastructure-foundation.md)
 - Business questions: Review [Analytics Features Summary](./analytics-features-summary.md)
-- Implementation questions: Review [Implementation Roadmap](../implementation/backlog/analytics-foundation-roadmap.md)
+- Implementation questions: Review [Implementation Roadmap](../implementation/current/analytics-foundation-roadmap.md)
 
 **Need clarification?**
 - Create an issue in the project repository

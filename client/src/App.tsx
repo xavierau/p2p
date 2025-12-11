@@ -25,6 +25,7 @@ import BranchList from './pages/BranchList';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/Settings';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import { initializeCsrf } from './lib/api';
 
 function App() {
@@ -62,6 +63,7 @@ function App() {
                                         <Route path="/departments" element={<Page title="Departments"><DepartmentList /></Page>} />
                                         <Route path="/cost-centers" element={<Page title="Cost Centers"><CostCenterList /></Page>} />
                                         <Route path="/branches" element={<Page title="Branches"><BranchList /></Page>} />
+                                        <Route path="/analytics" element={<Page title="Analytics Dashboard"><AnalyticsDashboard /></Page>} />
                                         <Route path="/profile" element={<Page title="Profile"><ProfilePage /></Page>} />
                                         <Route path="/settings" element={<Page title="Settings"><SettingsPage /></Page>} />
                                     </Routes>

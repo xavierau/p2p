@@ -11,3 +11,6 @@ export * from './delivery';
 
 // Files Bounded Context
 export * from './files';
+
+// Analytics Bounded Context
+export * from './analytics';

@@ -1,9 +1,10 @@
 # Analytics Foundation - Implementation Roadmap
 
-**Document Version**: 1.0
+**Document Version**: 1.1
 **Date**: 2025-12-10
-**Status**: Ready for Implementation
+**Status**: Ready for Implementation (Architecture Approved with Modifications)
 **Estimated Total Effort**: 6-7 weeks (Foundation + 3 Features)
+**Architecture Review**: 2025-12-10 - Approved with required changes
 
 ---
 
@@ -34,36 +35,73 @@
 
 ---
 
+## Architecture Review Summary
+
+> **Key Changes Required** (from 2025-12-10 review):
+
+| Change | Impact | Phase |
+|--------|--------|-------|
+| Create `domain/analytics/` with DDD structure | High | Sprint 1 |
+| Use dependency injection (no singletons) | High | Sprint 2 |
+| Add `dimensionHash` to SpendingMetric | High | Sprint 1 |
+| Use separate Bull queues (3 queues) | Medium | Sprint 3 |
+| Fix Bull job naming (use job.name) | High | Sprint 3 |
+| Add Zod validation schemas | Medium | Sprint 1 |
+| Use PATCH for state changes (REST) | Low | Sprint 4 |
+| Add error handling classes | Medium | Sprint 2 |
+
+---
+
 ## Foundation Components Breakdown
 
-### Component Tree
+### Component Tree (Updated)
 
 ```
 Analytics & Intelligence Foundation
+├── 0. Domain Layer (NEW - DDD Structure)
+│   └── domain/analytics/
+│       ├── entities/
+│       │   ├── SpendingMetric.ts
+│       │   ├── PurchasePattern.ts
+│       │   └── Recommendation.ts
+│       ├── value-objects/
+│       │   ├── RecommendationType.ts
+│       │   └── ConfidenceScore.ts
+│       ├── repositories/
+│       │   ├── ISpendingMetricRepository.ts
+│       │   └── IRecommendationRepository.ts
+│       ├── services/
+│       │   ├── IAggregationService.ts
+│       │   ├── IPatternRecognitionService.ts
+│       │   ├── ICrossLocationService.ts
+│       │   └── ICacheService.ts
+│       └── events/
+│           └── AnalyticsEvents.ts
+│
 ├── 1. Data Layer
-│   ├── SpendingMetric (table)
+│   ├── SpendingMetric (table + dimensionHash unique key)
 │   ├── PurchasePattern (table)
 │   ├── PriceSnapshot (table)
 │   └── Recommendation (table + enums)
 │
 ├── 2. Infrastructure Layer
-│   ├── RedisService (distributed cache)
+│   ├── RedisService (implements ICacheService)
 │   ├── JobQueueService (Bull integration)
 │   └── Distributed PubSub (event bus)
 │
-├── 3. Analytics Services
-│   ├── AggregationService
+├── 3. Analytics Services (with DI)
+│   ├── AggregationService (implements IAggregationService)
 │   │   ├── computeDailySpendingMetrics()
 │   │   ├── computePriceBenchmarks()
 │   │   └── refreshMaterializedViews()
 │   │
-│   ├── PatternRecognitionService
+│   ├── PatternRecognitionService (implements IPatternRecognitionService)
 │   │   ├── analyzePurchasePattern()
 │   │   ├── detectOrderCycle()
 │   │   ├── predictNextOrder()
 │   │   └── detectAnomalies()
 │   │
-│   └── CrossLocationService
+│   └── CrossLocationService (implements ICrossLocationService)
 │       ├── getPriceVariance()
 │       ├── getBenchmarkStats()
 │       ├── compareSpendingByBranch()
@@ -83,32 +121,44 @@ Analytics & Intelligence Foundation
 │       ├── apply()
 │       └── expireRecommendations()
 │
-├── 5. Background Jobs
-│   ├── compute-spending-metrics (hourly)
-│   ├── compute-price-benchmarks (daily)
-│   ├── analyze-purchase-patterns (daily)
-│   ├── generate-recommendations (daily)
-│   ├── detect-anomalies (hourly)
-│   └── cleanup-expired-recommendations (daily)
+├── 5. Background Jobs (3 Separate Queues)
+│   ├── analytics:aggregation queue
+│   │   ├── compute-spending-metrics (hourly)
+│   │   └── compute-price-benchmarks (daily)
+│   ├── analytics:pattern queue
+│   │   ├── analyze-purchase-patterns (daily)
+│   │   └── detect-anomalies (hourly)
+│   └── analytics:recommendations queue
+│       ├── generate-recommendations (daily)
+│       └── cleanup-expired-recommendations (daily)
 │
-└── 6. API Layer
+├── 6. Validation Layer (NEW)
+│   └── schemas/analytics.schema.ts (Zod)
+│
+├── 7. Error Handling (NEW)
+│   └── errors/AnalyticsError.ts
+│
+└── 8. API Layer (REST Conventions)
     ├── GET /api/analytics/spending-metrics
     ├── GET /api/analytics/price-variance
     ├── GET /api/analytics/purchase-patterns
     ├── GET /api/recommendations
-    ├── POST /api/recommendations/:id/view
-    ├── POST /api/recommendations/:id/dismiss
-    └── POST /api/recommendations/:id/apply
+    ├── PATCH /api/recommendations/:id/view
+    ├── PATCH /api/recommendations/:id/dismiss
+    └── PATCH /api/recommendations/:id/apply
 ```
 
 ---
 
 ## Sprint Breakdown (Foundation)
 
-### Sprint 1: Data & Infrastructure (Week 1-2)
+### Sprint 1: Data, Domain Layer & Infrastructure (Week 1-2)
+
+> **UPDATED**: Added Domain Layer setup (Days 3-4) per architecture review
 
 #### Day 1-2: Database Schema
 - [ ] Define Prisma models (SpendingMetric, PurchasePattern, PriceSnapshot, Recommendation)
+- [ ] **NEW**: Add `dimensionHash` unique column to SpendingMetric (replaces composite unique on nullable fields)
 - [ ] Add indexes for performance
 - [ ] Create migration
 - [ ] Test migration on dev database
@@ -118,35 +168,50 @@ Analytics & Intelligence Foundation
 
 ---
 
-#### Day 3-5: Redis Integration
+#### Day 3-4: Domain Layer Setup (NEW)
+- [ ] Create `domain/analytics/` directory structure
+- [ ] Define service interfaces:
+  - `ICacheService` - cache abstraction
+  - `IAggregationService` - aggregation contract
+  - `IPatternRecognitionService` - pattern detection contract
+  - `ICrossLocationService` - cross-location analysis contract
+- [ ] Define analytics events (`AnalyticsEvents.ts`)
+- [ ] Create error classes (`errors/AnalyticsError.ts`)
+- [ ] Create Zod validation schemas (`schemas/analytics.schema.ts`)
+
+**Deliverable**: Domain layer interfaces defined, validation schemas ready
+
+---
+
+#### Day 5-7: Redis Integration
 - [ ] Install `ioredis` package
-- [ ] Create `RedisService` class
+- [ ] Create `RedisService` class **implementing ICacheService**
 - [ ] Implement cache methods (get, set, del, invalidateByPrefix)
 - [ ] Implement pub/sub methods
 - [ ] Implement set/sorted set methods
-- [ ] Replace `node-cache` with `RedisService` in existing code
+- [ ] **NEW**: Use factory function instead of singleton export
 - [ ] Update cache invalidation subscribers
 - [ ] Test distributed caching
 
-**Deliverable**: Redis operational, existing analytics cached in Redis
+**Deliverable**: Redis operational, implements ICacheService interface
 
 ---
 
-#### Day 6-8: Job Queue Setup
+#### Day 8-9: Job Queue Setup
 - [ ] Install `bull` and `@types/bull`
 - [ ] Create `JobQueueService` class
-- [ ] Create job queue definitions (structure only)
+- [ ] **NEW**: Create 3 separate queues (aggregation, pattern, recommendations)
 - [ ] Create job processors (empty handlers)
 - [ ] Set up Bull dashboard (monitoring)
-- [ ] Configure cron schedules
+- [ ] **NEW**: Configure job-specific timeouts
 - [ ] Test job scheduling
 
-**Deliverable**: Job queue operational, jobs scheduled (empty)
+**Deliverable**: Job queues operational (3 queues), jobs scheduled (empty)
 
 ---
 
-#### Day 9-10: Integration & Testing
-- [ ] Unit tests for RedisService
+#### Day 10: Integration & Testing
+- [ ] Unit tests for RedisService (with ICacheService contract tests)
 - [ ] Unit tests for JobQueueService
 - [ ] Integration tests (Redis + jobs)
 - [ ] Load testing (cache performance)
@@ -158,30 +223,37 @@ Analytics & Intelligence Foundation
 
 ### Sprint 2: Core Services (Week 2-3)
 
+> **UPDATED**: Services must implement interfaces and use dependency injection
+
 #### Day 1-3: AggregationService
-- [ ] Create `AggregationService` class
+- [ ] Create `AggregationService` class **implementing IAggregationService**
+- [ ] **NEW**: Accept dependencies via constructor (PrismaClient, ICacheService, PubSub)
 - [ ] Implement `computeDailySpendingMetrics()`
   - Query approved invoices for date
   - Group by dimensions (item, vendor, branch, dept)
+  - **NEW**: Compute `dimensionHash` for uniqueness
+  - **NEW**: Wrap in `prisma.$transaction()` for data integrity
   - Insert into SpendingMetric table
-  - Handle duplicates (upsert logic)
 - [ ] Implement `computePriceBenchmarks()`
   - Query item prices across branches
   - Calculate avg, min, max, std dev
   - Insert into PriceSnapshot table
-- [ ] Unit tests with mocked Prisma
+- [ ] **NEW**: Add cursor-based batching for large datasets
+- [ ] Unit tests with mocked dependencies
 - [ ] Integration tests with test database
 
-**Deliverable**: AggregationService functional, tested
+**Deliverable**: AggregationService functional, tested, uses DI
 
 ---
 
 #### Day 4-6: PatternRecognitionService
-- [ ] Create `PatternRecognitionService` class
+- [ ] Create `PatternRecognitionService` class **implementing IPatternRecognitionService**
+- [ ] **NEW**: Accept dependencies via constructor
 - [ ] Implement `detectOrderCycle()`
   - Calculate time between orders
   - Calculate average quantity
   - Compute standard deviations
+  - **NEW**: Guard against division by zero (empty arrays)
 - [ ] Implement `analyzePurchasePattern()`
   - Fetch historical invoices
   - Detect cycles
@@ -192,19 +264,21 @@ Analytics & Intelligence Foundation
 - [ ] Implement `detectAnomalies()`
   - Compare recent orders to pattern
   - Flag outliers (>2 std dev)
-- [ ] Unit tests with fixture data
+- [ ] Unit tests with fixture data (including edge cases)
 - [ ] Integration tests
 
-**Deliverable**: PatternRecognitionService functional, tested
+**Deliverable**: PatternRecognitionService functional, tested, handles edge cases
 
 ---
 
 #### Day 7-9: CrossLocationService
-- [ ] Create `CrossLocationService` class
+- [ ] Create `CrossLocationService` class **implementing ICrossLocationService**
+- [ ] **NEW**: Accept dependencies via constructor
 - [ ] Implement `getPriceVariance()`
   - Query PriceSnapshot for item
   - Compare across branches
   - Calculate variance percentages
+  - **NEW**: Use structured cache keys (`analytics:price-variance:item:{id}:vendor:{id}`)
 - [ ] Implement `getBenchmarkStats()`
   - Return network avg, min, max from PriceSnapshot
 - [ ] Implement `compareSpendingByBranch()`
@@ -221,6 +295,7 @@ Analytics & Intelligence Foundation
 
 #### Day 10: RecommendationService & RuleEngine (Skeleton)
 - [ ] Create `RecommendationService` class
+- [ ] **NEW**: Accept dependencies via constructor
 - [ ] Implement CRUD methods (generateRecommendations stub)
 - [ ] Implement user interaction methods (view, dismiss, apply)
 - [ ] Create `RuleEngine` class
@@ -234,11 +309,15 @@ Analytics & Intelligence Foundation
 
 ### Sprint 3: Background Jobs (Week 3-4)
 
-#### Day 1-2: Spending Metrics Job
+> **UPDATED**: Jobs run on 3 separate queues with proper job naming
+
+#### Day 1-2: Spending Metrics Job (analytics:aggregation queue)
 - [ ] Implement `compute-spending-metrics` job handler
 - [ ] Call `AggregationService.computeDailySpendingMetrics()`
 - [ ] Handle errors and retries
 - [ ] Log progress and results
+- [ ] **NEW**: Use job name (not jobId) for Bull routing
+- [ ] **NEW**: Configure 2-minute timeout
 - [ ] Schedule hourly execution
 - [ ] Test job execution
 - [ ] Monitor job dashboard
@@ -247,10 +326,11 @@ Analytics & Intelligence Foundation
 
 ---
 
-#### Day 3-4: Price Benchmarks Job
+#### Day 3-4: Price Benchmarks Job (analytics:aggregation queue)
 - [ ] Implement `compute-price-benchmarks` job handler
 - [ ] Call `AggregationService.computePriceBenchmarks()`
 - [ ] Handle errors and retries
+- [ ] **NEW**: Configure 5-minute timeout (heavy job)
 - [ ] Schedule daily execution
 - [ ] Test job execution
 
@@ -258,12 +338,14 @@ Analytics & Intelligence Foundation
 
 ---
 
-#### Day 5-6: Purchase Patterns Job
+#### Day 5-6: Purchase Patterns Job (analytics:pattern queue)
 - [ ] Implement `analyze-purchase-patterns` job handler
 - [ ] Iterate over all items (or per branch)
 - [ ] Call `PatternRecognitionService.analyzePurchasePattern()`
+- [ ] **NEW**: Implement incremental updates (only items with new invoices)
 - [ ] Store results in PurchasePattern table
 - [ ] Handle errors and retries
+- [ ] **NEW**: Configure 5-minute timeout (heavy job)
 - [ ] Schedule daily execution
 - [ ] Test job execution
 
@@ -271,11 +353,12 @@ Analytics & Intelligence Foundation
 
 ---
 
-#### Day 7-8: Recommendations Job (Skeleton)
+#### Day 7-8: Recommendations Job (analytics:recommendations queue)
 - [ ] Implement `generate-recommendations` job handler
 - [ ] Call `RuleEngine.evaluateRules()` (no rules yet)
 - [ ] Store recommendations
 - [ ] Handle errors and retries
+- [ ] **NEW**: Configure 3-minute timeout
 - [ ] Schedule daily execution
 - [ ] Test job execution
 
@@ -283,21 +366,23 @@ Analytics & Intelligence Foundation
 
 ---
 
-#### Day 9: Anomaly Detection Job
+#### Day 9: Anomaly Detection Job (analytics:pattern queue)
 - [ ] Implement `detect-anomalies` job handler
 - [ ] Fetch recent invoices
 - [ ] Call `PatternRecognitionService.detectAnomalies()`
 - [ ] Optionally create recommendations for anomalies
+- [ ] **NEW**: Configure 2-minute timeout
 - [ ] Schedule hourly execution
 
 **Deliverable**: Anomalies detected automatically
 
 ---
 
-#### Day 10: Cleanup Job
+#### Day 10: Cleanup Job (analytics:recommendations queue)
 - [ ] Implement `cleanup-expired-recommendations` job handler
 - [ ] Call `RecommendationService.expireRecommendations()`
 - [ ] Archive old data (optional)
+- [ ] **NEW**: Configure 1-minute timeout
 - [ ] Schedule daily execution
 
 **Deliverable**: Old recommendations cleaned up
@@ -306,24 +391,27 @@ Analytics & Intelligence Foundation
 
 ### Sprint 4: API & Integration (Week 4)
 
+> **UPDATED**: Use PATCH for state changes, validate with Zod
+
 #### Day 1-3: API Endpoints
-- [ ] Create route `/api/analytics/spending-metrics`
-- [ ] Create route `/api/analytics/price-variance`
-- [ ] Create route `/api/analytics/purchase-patterns`
-- [ ] Create route `/api/recommendations` (CRUD)
-- [ ] Create route `/api/recommendations/:id/view` (POST)
-- [ ] Create route `/api/recommendations/:id/dismiss` (POST)
-- [ ] Create route `/api/recommendations/:id/apply` (POST)
-- [ ] Add Zod validation schemas
+- [ ] Create route `/api/analytics/spending-metrics` (GET)
+- [ ] Create route `/api/analytics/price-variance` (GET)
+- [ ] Create route `/api/analytics/purchase-patterns` (GET)
+- [ ] Create route `/api/recommendations` (GET)
+- [ ] **NEW**: Create route `/api/recommendations/:id/view` (PATCH - not POST)
+- [ ] **NEW**: Create route `/api/recommendations/:id/dismiss` (PATCH - not POST)
+- [ ] **NEW**: Create route `/api/recommendations/:id/apply` (PATCH - not POST)
+- [ ] **NEW**: Apply Zod validation to all endpoints (using schemas from Sprint 1)
 - [ ] Add RBAC middleware (ANALYTICS_READ, RECOMMENDATION_READ)
+- [ ] **NEW**: Extend `/health` endpoint with Redis and job queue status
 - [ ] Unit tests for routes
 
-**Deliverable**: API endpoints functional, documented
+**Deliverable**: API endpoints functional, documented, REST-compliant
 
 ---
 
 #### Day 4-5: Event Bus Integration
-- [ ] Define new PubSub events
+- [ ] Define new PubSub events (from `AnalyticsEvents.ts`):
   - `analytics.spending-metrics-computed`
   - `analytics.pattern-detected`
   - `analytics.anomaly-detected`
@@ -522,7 +610,7 @@ Week 8:    Production deployment, monitoring
 
 **Risk: Redis performance issues**
 - Mitigation: Use AWS ElastiCache with appropriate instance size
-- Fallback: Revert to node-cache temporarily, plan upgrade path
+- Fallback: Revert to node-cache temporarily (ICacheService abstraction enables this)
 
 **Risk: Job failures undetected**
 - Mitigation: Set up Bull dashboard, monitoring, PagerDuty alerts
@@ -535,6 +623,14 @@ Week 8:    Production deployment, monitoring
 **Risk: Pattern detection inaccurate**
 - Mitigation: Start with simple rules, validate with sample data, iterate
 - Fallback: Manual review, user feedback loop
+
+**Risk: SpendingMetric duplicate aggregations (NEW)**
+- Mitigation: Use `dimensionHash` unique column instead of composite key on nullable fields
+- Fallback: Add database constraint check triggers
+
+**Risk: Memory pressure on large datasets (NEW)**
+- Mitigation: Implement cursor-based batching in AggregationService
+- Fallback: Process in smaller date chunks
 
 ---
 
@@ -605,10 +701,44 @@ This roadmap provides a clear path from foundation to business features:
 - Testable, maintainable, scalable architecture
 
 **Next Steps**:
-1. Approve roadmap
-2. Assign team to Foundation sprint
-3. Set up infrastructure (Redis, Bull dashboard)
-4. Begin Sprint 1 (Data & Infrastructure)
+1. ~~Approve roadmap~~ **DONE** - Architecture review approved with modifications
+2. Review and understand architecture changes (this document)
+3. Assign team to Foundation sprint
+4. Set up infrastructure (Redis, Bull dashboard)
+5. Begin Sprint 1 (Data, Domain Layer & Infrastructure)
+
+---
+
+## Appendix: Architecture Review Changes Checklist
+
+Use this checklist to verify all architecture review requirements have been addressed:
+
+- [ ] **Sprint 1 Changes**
+  - [ ] Created `domain/analytics/` directory structure
+  - [ ] Defined all service interfaces (ICacheService, IAggregationService, etc.)
+  - [ ] Added `dimensionHash` column to SpendingMetric model
+  - [ ] Created `errors/AnalyticsError.ts`
+  - [ ] Created `schemas/analytics.schema.ts`
+  - [ ] RedisService implements ICacheService
+  - [ ] Created 3 separate Bull queues
+
+- [ ] **Sprint 2 Changes**
+  - [ ] AggregationService implements IAggregationService
+  - [ ] All services accept dependencies via constructor
+  - [ ] No singleton exports (use factory functions)
+  - [ ] Transaction safety in aggregation operations
+  - [ ] Statistical edge case guards (division by zero)
+  - [ ] Cursor-based batching for large datasets
+
+- [ ] **Sprint 3 Changes**
+  - [ ] Jobs use job names (not just jobId)
+  - [ ] Jobs assigned to correct queues
+  - [ ] Job-specific timeouts configured
+
+- [ ] **Sprint 4 Changes**
+  - [ ] State change endpoints use PATCH
+  - [ ] Zod validation on all endpoints
+  - [ ] Health endpoint includes Redis/job queue status
 
 ---
 

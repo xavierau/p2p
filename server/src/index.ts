@@ -10,6 +10,19 @@ import { PrismaClient } from '@prisma/client';
 // Load environment variables FIRST before any other imports that depend on them
 dotenv.config();
 
+// Analytics jobs (conditional import based on feature flag)
+import { AnalyticsFeatureFlags } from './config/analytics';
+import { setupAnalyticsJobs, AnalyticsJobsSetupResult } from './jobs/analytics';
+import { createRedisService } from './services/infrastructure/redisService';
+import { createAggregationService } from './services/analytics/aggregationService';
+import { createPatternRecognitionService } from './services/analytics/patternRecognitionService';
+import {
+  createRecommendationService,
+  RecommendationService,
+} from './services/recommendations/recommendationService';
+import { createRuleEngine } from './services/recommendations/ruleEngine';
+import pubsub from './services/pubsub';
+
 import { validateJwtConfig } from './config/jwt';
 import { errorHandler } from './middleware/errorHandler';
 import { apiLimiter, authLimiter } from './middleware/rateLimiter';
@@ -28,6 +41,7 @@ import settingsRoutes from './routes/settings';
 import departmentRoutes from './routes/departments';
 import purchaseOrderRoutes from './routes/purchaseOrders';
 import analyticsRoutes from './routes/analytics';
+import recommendationsRoutes from './routes/recommendations';
 import mcpTokenRoutes from './routes/mcpTokens';
 import deliveryNoteRoutes from './routes/deliveryNotes';
 import fileAttachmentRoutes from './routes/fileAttachments';
@@ -52,6 +66,9 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Raw Prisma client for graceful shutdown
 const prismaClient = new PrismaClient();
+
+// Analytics jobs setup result (set when analytics jobs are enabled)
+let analyticsJobsResult: AnalyticsJobsSetupResult | null = null;
 
 // ============================================================================
 // Security Middleware
@@ -174,6 +191,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/recommendations', recommendationsRoutes);
 app.use('/api/mcp-tokens', mcpTokenRoutes);
 app.use('/api/delivery-notes', deliveryNoteRoutes);
 app.use('/api/files', fileAttachmentRoutes);
@@ -193,11 +211,63 @@ app.use(errorHandler);
 
 let server: Server;
 
-const startServer = (): void => {
+/**
+ * Initialize analytics background jobs if enabled
+ */
+const initializeAnalyticsJobs = async (): Promise<void> => {
+  if (!AnalyticsFeatureFlags.areJobsEnabled()) {
+    logger.info('Analytics jobs disabled (ANALYTICS_JOBS_ENABLED != true)');
+    return;
+  }
+
+  if (!AnalyticsFeatureFlags.useRedisCache()) {
+    logger.warn('Analytics jobs require Redis. Set REDIS_URL to enable.');
+    return;
+  }
+
+  try {
+    logger.info('Initializing analytics background jobs...');
+
+    // Create service dependencies
+    const cacheService = createRedisService();
+    const aggregationService = createAggregationService(prismaClient, cacheService, pubsub);
+    const patternRecognitionService = createPatternRecognitionService(
+      prismaClient,
+      cacheService,
+      pubsub
+    );
+    const recommendationService = createRecommendationService(prismaClient, cacheService, pubsub);
+    const ruleEngine = createRuleEngine(prismaClient, recommendationService);
+
+    // Set up analytics jobs
+    analyticsJobsResult = await setupAnalyticsJobs({
+      prisma: prismaClient,
+      cacheService,
+      aggregationService,
+      patternRecognitionService,
+      recommendationService,
+      ruleEngine,
+    });
+
+    logger.info('Analytics background jobs initialized successfully');
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to initialize analytics jobs');
+    // Don't fail server startup - analytics jobs are optional
+  }
+};
+
+const startServer = async (): Promise<void> => {
+  // Initialize analytics jobs before starting server
+  await initializeAnalyticsJobs();
+
   server = app.listen(PORT, () => {
     logger.info({ port: PORT }, 'Server started');
     logger.info({ endpoint: `http://localhost:${PORT}/api/mcp` }, 'MCP HTTP endpoint available');
     logger.info({ endpoint: `http://localhost:${PORT}/health` }, 'Health check endpoint available');
+
+    if (analyticsJobsResult) {
+      logger.info('Analytics background jobs are running');
+    }
   });
 };
 
@@ -221,6 +291,16 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
         }
       });
     });
+  }
+
+  // Shutdown analytics jobs
+  if (analyticsJobsResult) {
+    try {
+      await analyticsJobsResult.shutdown();
+      logger.info('Analytics jobs shutdown complete');
+    } catch (error) {
+      logger.error({ err: error }, 'Error shutting down analytics jobs');
+    }
   }
 
   // Disconnect Prisma client
@@ -249,4 +329,8 @@ process.on('unhandledRejection', (reason, promise) => {
   logger.fatal({ reason, promise }, 'Unhandled rejection');
 });
 
-startServer();
+// Start the server (async)
+startServer().catch((error) => {
+  logger.fatal({ err: error }, 'Failed to start server');
+  process.exit(1);
+});

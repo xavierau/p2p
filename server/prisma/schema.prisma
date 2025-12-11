@@ -64,6 +64,9 @@ model Vendor {
   items          Item[]
   purchaseOrders PurchaseOrder[]
   deliveryNotes  DeliveryNote[]
+  // Analytics relations
+  spendingMetrics SpendingMetric[]
+  priceSnapshots  PriceSnapshot[]
 
   @@index([deletedAt])
   @@index([name])
@@ -81,6 +84,10 @@ model Item {
   priceHistory      ItemPriceHistory[]
   poItems           PurchaseOrderItem[]
   deliveryNoteItems DeliveryNoteItem[]
+  // Analytics relations
+  spendingMetrics   SpendingMetric[]
+  purchasePatterns  PurchasePattern[]
+  priceSnapshots    PriceSnapshot[]
 
   @@unique([vendorId, item_code])
   @@index([vendorId])
@@ -191,6 +198,10 @@ model Branch {
   id       Int       @id @default(autoincrement())
   name     String    @unique
   invoices Invoice[]
+  // Analytics relations
+  spendingMetrics  SpendingMetric[]
+  purchasePatterns PurchasePattern[]
+  priceSnapshots   PriceSnapshot[]
 }
 
 model Department {
@@ -198,6 +209,8 @@ model Department {
   name        String       @unique
   costCenters CostCenter[]
   invoices    Invoice[]
+  // Analytics relations
+  spendingMetrics SpendingMetric[]
 }
 
 model CostCenter {
@@ -206,6 +219,8 @@ model CostCenter {
   departmentId Int
   department   Department @relation(fields: [departmentId], references: [id])
   invoices     Invoice[]
+  // Analytics relations
+  spendingMetrics SpendingMetric[]
 }
 
 model AuditLog {
@@ -390,4 +405,168 @@ model FileVersion {
 
   @@index([originalFileId])
   @@unique([originalFileId, versionNumber])
+}
+
+// ============================================
+// ANALYTICS FOUNDATION MODELS
+// ============================================
+
+enum RecommendationType {
+  COST_OPTIMIZATION
+  VENDOR_SWITCH
+  CONSOLIDATION
+  WASTE_PREVENTION
+  RISK_ALERT
+  SEASONAL_OPPORTUNITY
+  INVENTORY_REORDER
+  PRICE_NEGOTIATION
+}
+
+enum RecommendationStatus {
+  PENDING
+  VIEWED
+  DISMISSED
+  APPLIED
+  EXPIRED
+}
+
+model SpendingMetric {
+  id             Int      @id @default(autoincrement())
+
+  // ARCHITECTURE: Use dimension hash for uniqueness instead of composite key with NULLs
+  // PostgreSQL treats NULL != NULL, so composite unique on nullable fields doesn't work properly
+  dimensionHash  String   @unique // SHA256 of concatenated dimension values
+
+  // Dimensions
+  date           DateTime // Day-level granularity
+  itemId         Int?
+  item           Item?    @relation(fields: [itemId], references: [id])
+  vendorId       Int?
+  vendor         Vendor?  @relation(fields: [vendorId], references: [id])
+  branchId       Int?
+  branch         Branch?  @relation(fields: [branchId], references: [id])
+  departmentId   Int?
+  department     Department? @relation(fields: [departmentId], references: [id])
+  costCenterId   Int?
+  costCenter     CostCenter? @relation(fields: [costCenterId], references: [id])
+
+  // Metrics
+  totalAmount    Float
+  invoiceCount   Int
+  quantity       Int?
+  avgUnitPrice   Float?
+
+  // Metadata
+  computedAt     DateTime @default(now())
+
+  @@index([date, branchId, itemId])
+  @@index([date, vendorId, itemId])
+  @@index([itemId, branchId, date])
+  @@index([vendorId, date])
+  @@index([branchId, date])
+  @@index([departmentId, date])
+}
+
+model PurchasePattern {
+  id                  Int      @id @default(autoincrement())
+
+  itemId              Int
+  item                Item     @relation(fields: [itemId], references: [id])
+  branchId            Int?
+  branch              Branch?  @relation(fields: [branchId], references: [id])
+
+  // Pattern metrics
+  avgOrderCycleDays   Float    // e.g., 4.2 days
+  avgOrderQuantity    Float
+  avgOrderAmount      Float
+  stdDevQuantity      Float    // For anomaly detection
+  stdDevAmount        Float
+
+  // Trend indicators
+  isIncreasing        Boolean  @default(false)
+  isDecreasing        Boolean  @default(false)
+  isSeasonal          Boolean  @default(false)
+  seasonalityPattern  String?  @db.Text // JSON: monthly patterns
+
+  // Metadata
+  lastOrderDate       DateTime?
+  nextPredictedOrder  DateTime?
+  confidenceScore     Float    @default(0.5) // 0-1
+
+  basedOnInvoices     Int      // Sample size
+  analysisStartDate   DateTime
+  analysisEndDate     DateTime
+  lastUpdated         DateTime @updatedAt
+
+  @@unique([itemId, branchId])
+  @@index([branchId])
+  @@index([lastOrderDate])
+  @@index([nextPredictedOrder])
+}
+
+model PriceSnapshot {
+  id        Int      @id @default(autoincrement())
+
+  itemId    Int
+  item      Item     @relation(fields: [itemId], references: [id])
+  vendorId  Int
+  vendor    Vendor   @relation(fields: [vendorId], references: [id])
+  branchId  Int?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+
+  price     Float
+  date      DateTime
+
+  // Statistics (computed from network)
+  networkAvgPrice      Float?
+  networkMinPrice      Float?
+  networkMaxPrice      Float?
+  varianceFromAvg      Float?  // Percentage
+
+  @@index([itemId, date])
+  @@index([vendorId, itemId, date])
+  @@index([branchId, itemId, date])
+  @@index([date])
+}
+
+model Recommendation {
+  id              Int                @id @default(autoincrement())
+
+  type            RecommendationType
+  category        String             // "Cost Optimization", "Risk Alert", etc.
+
+  title           String             // "Switch vendor for Chicken Breast"
+  description     String             @db.Text
+  reasoning       String             @db.Text // Why this recommendation
+
+  // Impact estimates
+  estimatedSavings   Float?
+  confidenceScore    Float       @default(0.5) // 0-1
+  priority           Int         @default(3)   // 1=critical, 5=low
+
+  // Context data (JSON)
+  context         String             @db.Text // Item IDs, vendor IDs, etc.
+
+  // State
+  status          RecommendationStatus @default(PENDING)
+  createdBy       String             @default("SYSTEM")
+
+  // User interaction
+  viewedAt        DateTime?
+  viewedBy        Int?               // User ID
+  dismissedAt     DateTime?
+  dismissedBy     Int?
+  dismissReason   String?
+  appliedAt       DateTime?
+  appliedBy       Int?
+
+  // Metadata
+  createdAt       DateTime           @default(now())
+  expiresAt       DateTime?
+
+  @@index([status, priority])
+  @@index([type, status])
+  @@index([createdAt])
+  @@index([expiresAt])
+  @@index([status, priority, createdAt])  // Optimizes common query pattern: list by status, sorted by priority and date
 }
