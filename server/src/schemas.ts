@@ -139,6 +139,7 @@ export const analyticsSchema = z.object({
 });
 
 export const createInvoiceSchema = z.object({
+    invoiceNumber: optionalSanitizedString(100),
     items: z.array(z.object({
         itemId: z.number(),
         quantity: z.number(),
@@ -148,8 +149,50 @@ export const createInvoiceSchema = z.object({
     branchId: z.number().optional(),
     departmentId: z.number().optional(),
     costCenterId: z.number().optional(),
+    purchaseOrderId: z.number().optional(),
 });
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
+
+// ============================================================================
+// Validation Schemas
+// ============================================================================
+export const ValidationSeveritySchema = z.enum(['INFO', 'WARNING', 'CRITICAL']);
+export type ValidationSeverity = z.infer<typeof ValidationSeveritySchema>;
+
+export const ValidationStatusSchema = z.enum(['FLAGGED', 'REVIEWED', 'DISMISSED', 'OVERRIDDEN']);
+export type ValidationStatus = z.infer<typeof ValidationStatusSchema>;
+
+export const ReviewValidationActionSchema = z.enum(['DISMISS', 'ESCALATE']);
+export type ReviewValidationAction = z.infer<typeof ReviewValidationActionSchema>;
+
+export const ReviewValidationSchema = z.object({
+  action: ReviewValidationActionSchema,
+});
+export type ReviewValidationInput = z.infer<typeof ReviewValidationSchema>;
+
+export const OverrideValidationSchema = z.object({
+  reason: sanitizedString(500).refine(v => v.length >= 10,
+    'Override reason must be at least 10 characters'
+  ),
+});
+export type OverrideValidationInput = z.infer<typeof OverrideValidationSchema>;
+
+export const GetFlaggedInvoicesFiltersSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  severity: ValidationSeveritySchema.optional(),
+  status: ValidationStatusSchema.optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+}).partial();
+export type GetFlaggedInvoicesFiltersInput = z.infer<typeof GetFlaggedInvoicesFiltersSchema>;
+
+export const UpdateValidationRuleSchema = z.object({
+  enabled: z.boolean().optional(),
+  severity: ValidationSeveritySchema.optional(),
+  config: z.record(z.unknown()).optional(),
+});
+export type UpdateValidationRuleInput = z.infer<typeof UpdateValidationRuleSchema>;
 
 // ============================================================================
 // Vendor Schemas

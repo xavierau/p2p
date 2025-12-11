@@ -142,29 +142,15 @@ export interface ValidationOverride {
 // ============================================================================
 
 /**
- * Context passed to validation rules during execution
+ * DEPRECATED: Use types from './types/ValidationContext' instead
+ * Re-export for backward compatibility during migration
  */
-export interface ValidationContext {
-  prisma: any; // PrismaClient (avoid circular dependency)
-  config: RuleConfig;
-}
+export type { ValidationContext } from './types/ValidationContext';
 
 /**
- * Base interface for all validation rules
+ * DEPRECATED: Use IValidationRule from './interfaces/IValidationRule' instead
  */
-export interface IValidationRule {
-  ruleType: ValidationRuleType;
-  severity: ValidationSeverity;
-  enabled: boolean;
-
-  /**
-   * Execute the validation rule
-   * @param invoice - Invoice to validate (with all relations loaded)
-   * @param context - Validation context (database, config, etc.)
-   * @returns ValidationResult
-   */
-  validate(invoice: any, context: ValidationContext): Promise<ValidationResult>;
-}
+export type { IValidationRule } from './interfaces/IValidationRule';
 
 /**
  * Duplicate detection service interface
@@ -175,7 +161,20 @@ export interface IDuplicateDetector {
    * @param invoice - Invoice to check
    * @returns ValidationResult
    */
-  checkDuplicate(invoice: any): Promise<ValidationResult>;
+  checkDuplicate(invoice: InvoiceForDuplicateCheck): Promise<ValidationResult>;
+}
+
+/**
+ * Simplified Invoice for duplicate detection (minimal fields)
+ */
+export interface InvoiceForDuplicateCheck {
+  id: number;
+  invoiceNumber: string | null;
+  vendorId: number | null;
+  date: Date;
+  totalAmount: number;
+  status: string;
+  deletedAt: Date | null;
 }
 
 /**
@@ -184,10 +183,116 @@ export interface IDuplicateDetector {
 export interface ISuspiciousDetector {
   /**
    * Detect suspicious patterns in invoice
-   * @param invoice - Invoice to analyze
+   * @param invoice - Invoice to analyze with all relations
+   * @param context - Validation context with supporting data
    * @returns Array of ValidationResults (one per triggered rule)
    */
-  detectAnomalies(invoice: any): Promise<ValidationResult[]>;
+  detectAnomalies(invoice: InvoiceWithRelations, context: import('./types/ValidationContext').ValidationContext): Promise<ValidationResult[]>;
+}
+
+/**
+ * Invoice with all relations for validation
+ */
+export interface InvoiceWithRelations {
+  id: number;
+  invoiceNumber: string | null;
+  vendorId: number | null;
+  date: Date;
+  status: string;
+  totalAmount: number;
+  userId: number | null;
+  project: string | null;
+  accountingId: string | null;
+  syncStatus: string;
+  syncError: string | null;
+  deletedAt: Date | null;
+  purchaseOrderId: number | null;
+  branchId: number | null;
+  departmentId: number | null;
+  costCenterId: number | null;
+  items: InvoiceItemWithRelations[];
+  purchaseOrder?: PurchaseOrderWithRelations | null;
+  deliveryNotes?: InvoiceDeliveryLinkWithRelations[];
+  vendor?: VendorEntity | null;
+}
+
+export interface InvoiceItemWithRelations {
+  id: number;
+  invoiceId: number;
+  itemId: number;
+  quantity: number;
+  price: number;
+  item: ItemEntity;
+}
+
+export interface ItemEntity {
+  id: number;
+  name: string;
+  item_code: string | null;
+  price: number;
+  vendorId: number;
+  deletedAt: Date | null;
+}
+
+export interface PurchaseOrderWithRelations {
+  id: number;
+  vendorId: number;
+  date: Date;
+  status: string;
+  deletedAt: Date | null;
+  items: PurchaseOrderItemWithRelations[];
+}
+
+export interface PurchaseOrderItemWithRelations {
+  id: number;
+  purchaseOrderId: number;
+  itemId: number;
+  quantity: number;
+  price: number;
+  item?: ItemEntity;
+}
+
+export interface InvoiceDeliveryLinkWithRelations {
+  id: number;
+  invoiceId: number;
+  deliveryNoteId: number;
+  linkedAt: Date;
+  linkedBy: number;
+  deliveryNote: DeliveryNoteWithRelations;
+}
+
+export interface DeliveryNoteWithRelations {
+  id: number;
+  deliveryDate: Date;
+  receivedBy: string;
+  notes: string | null;
+  status: 'DRAFT' | 'CONFIRMED';
+  purchaseOrderId: number;
+  vendorId: number;
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy: number;
+  items: DeliveryNoteItemWithRelations[];
+}
+
+export interface DeliveryNoteItemWithRelations {
+  id: number;
+  deliveryNoteId: number;
+  itemId: number;
+  quantityOrdered: number;
+  quantityDelivered: number;
+  condition: 'GOOD' | 'DAMAGED' | 'PARTIAL';
+  discrepancyReason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  item?: ItemEntity;
+}
+
+export interface VendorEntity {
+  id: number;
+  name: string;
+  contact: string | null;
+  deletedAt: Date | null;
 }
 
 /**
@@ -409,17 +514,17 @@ export const getHighestSeverity = (
 ): ValidationSeverity | null => {
   if (validations.length === 0) return null;
 
-  const severityOrder = {
-    [ValidationSeverity.CRITICAL]: 4,
-    [ValidationSeverity.ERROR]: 3,
+  // Using partial record since ERROR severity doesn't exist in our validation domain
+  const severityOrder: Partial<Record<ValidationSeverity, number>> = {
+    [ValidationSeverity.CRITICAL]: 3,
     [ValidationSeverity.WARNING]: 2,
     [ValidationSeverity.INFO]: 1,
   };
 
-  return validations.reduce((highest, current) => {
-    return severityOrder[current.severity] > severityOrder[highest]
-      ? current.severity
-      : highest;
+  return validations.reduce((highest: ValidationSeverity, current: InvoiceValidation) => {
+    const currentValue = severityOrder[current.severity] || 0;
+    const highestValue = severityOrder[highest] || 0;
+    return currentValue > highestValue ? current.severity : highest;
   }, ValidationSeverity.INFO);
 };
 

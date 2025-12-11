@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { invoiceService } from '@/services/invoiceService';
-import type { Invoice, InvoiceStatus, SyncStatus } from '@/types';
+import { validationService } from '@/services/validationService';
+import type { Invoice, InvoiceStatus, SyncStatus, InvoiceValidationSummary } from '@/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import {
   Table,
@@ -12,9 +13,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import FileUploadZone from '@/components/file-attachments/FileUploadZone';
 import FileList from '@/components/file-attachments/FileList';
+import { ValidationAlert } from '@/components/validation/ValidationAlert';
+import { ValidationOverrideDialog } from '@/components/validation/ValidationOverrideDialog';
+import { AlertCircle } from 'lucide-react';
 
 /**
  * Formats a number as USD currency
@@ -105,9 +110,12 @@ const InvoiceDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [invoice, setInvoice] = useState<Invoice | null>(null);
+  const [validationSummary, setValidationSummary] = useState<InvoiceValidationSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [selectedValidation, setSelectedValidation] = useState<any>(null);
+  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
 
   const fetchInvoiceData = useCallback(async () => {
     if (!id) return;
@@ -116,8 +124,12 @@ const InvoiceDetail: React.FC = () => {
     setError(null);
 
     try {
-      const data = await invoiceService.getInvoiceById(Number(id));
-      setInvoice(data);
+      const [invoiceData, validationData] = await Promise.all([
+        invoiceService.getInvoiceById(Number(id)),
+        validationService.getValidationSummary(Number(id)).catch(() => null),
+      ]);
+      setInvoice(invoiceData);
+      setValidationSummary(validationData);
     } catch (err) {
       setError('Failed to load invoice details');
       console.error('Error fetching invoice:', err);
@@ -133,6 +145,14 @@ const InvoiceDetail: React.FC = () => {
 
   const handleStatusChange = async (action: 'approve' | 'reject') => {
     if (!id) return;
+
+    // Check for blocking validations before approval
+    if (action === 'approve' && validationSummary?.hasBlockingIssues) {
+      setError(
+        'Cannot approve invoice with critical validation issues. Please override or resolve the issues first.'
+      );
+      return;
+    }
 
     setIsUpdating(true);
     setError(null);
@@ -150,6 +170,18 @@ const InvoiceDetail: React.FC = () => {
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const handleOverride = (validation: any) => {
+    setSelectedValidation(validation);
+    setOverrideDialogOpen(true);
+  };
+
+  const handleOverrideSubmit = async (reason: string) => {
+    if (!selectedValidation) return;
+
+    await validationService.overrideValidation(selectedValidation.id, { reason });
+    await fetchInvoiceData();
   };
 
   const handleBackToList = () => {
@@ -272,6 +304,49 @@ const InvoiceDetail: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Validation Issues Card */}
+      {validationSummary && validationSummary.flagCount > 0 && (
+        <Card className={cn(
+          validationSummary.hasBlockingIssues
+            ? 'border-red-500 bg-red-50 dark:bg-red-950'
+            : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950'
+        )}>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <AlertCircle className={cn(
+                  'h-5 w-5',
+                  validationSummary.hasBlockingIssues ? 'text-red-500' : 'text-yellow-500'
+                )} />
+                Validation Issues
+              </span>
+              <Badge variant={validationSummary.hasBlockingIssues ? 'error' : 'warning'}>
+                {validationSummary.flagCount} {validationSummary.flagCount === 1 ? 'Issue' : 'Issues'}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {validationSummary.hasBlockingIssues && (
+              <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-md mb-3">
+                <p className="font-semibold">Critical Issues Detected</p>
+                <p className="text-sm mt-1">
+                  This invoice cannot be approved until all critical issues are resolved or overridden.
+                </p>
+              </div>
+            )}
+
+            {validationSummary.validations.map((validation) => (
+              <ValidationAlert
+                key={validation.id}
+                validation={validation}
+                onOverride={() => handleOverride(validation)}
+                showActions={validation.status === 'FLAGGED'}
+              />
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Organizational Context Card */}
       {hasOrganizationalContext && (
@@ -405,6 +480,17 @@ const InvoiceDetail: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Override Dialog */}
+      <ValidationOverrideDialog
+        isOpen={overrideDialogOpen}
+        onClose={() => {
+          setOverrideDialogOpen(false);
+          setSelectedValidation(null);
+        }}
+        onSubmit={handleOverrideSubmit}
+        validation={selectedValidation}
+      />
     </div>
   );
 };

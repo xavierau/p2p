@@ -486,7 +486,7 @@ This analysis produced three key documents:
    - Prisma models
    - Shared requirements breakdown
 
-2. **[Implementation Roadmap](../implementation/backlog/analytics-foundation-roadmap.md)**
+2. **[Implementation Roadmap](../implementation/completed/analytics-foundation-roadmap.md)**
    - Sprint-by-sprint plan
    - Day-by-day tasks
    - Deliverables and checkpoints

@@ -25,6 +25,8 @@ import BranchList from './pages/BranchList';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/Settings';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import FlaggedInvoicesPage from './pages/FlaggedInvoicesPage';
+import ValidationRulesPage from './pages/ValidationRulesPage';
 import { initializeCsrf } from './lib/api';
 
 function App() {
@@ -50,6 +52,8 @@ function App() {
                                         <Route path="/invoices" element={<Page title="Invoices"><InvoiceList /></Page>} />
                                         <Route path="/invoices/new" element={<Page title="Create Invoice"><CreateInvoice /></Page>} />
                                         <Route path="/invoices/:id" element={<Page title="Invoice Details"><InvoiceDetail /></Page>} />
+                                        <Route path="/validations/flagged-invoices" element={<Page title="Flagged Invoices"><FlaggedInvoicesPage /></Page>} />
+                                        <Route path="/validations/rules" element={<Page title="Validation Rules"><ValidationRulesPage /></Page>} />
                                         <Route path="/vendors" element={<Page title="Vendors"><VendorList /></Page>} />
                                         <Route path="/vendors/:id" element={<Page title="Vendor Details"><VendorDetail /></Page>} />
                                         <Route path="/items" element={<Page title="Items"><ItemList /></Page>} />

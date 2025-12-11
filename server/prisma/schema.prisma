@@ -18,20 +18,21 @@ enum UserRole {
 }
 
 model User {
-  id                    Int              @id @default(autoincrement())
-  email                 String           @unique
+  id                    Int                  @id @default(autoincrement())
+  email                 String               @unique
   password              String
   name                  String?
-  role                  UserRole         @default(USER)
+  role                  UserRole             @default(USER)
   invoices              Invoice[]
   mcpApiTokens          McpApiToken[]
   uploadedFiles         FileAttachment[]
+  validationOverrides   ValidationOverride[]
 
   // Refresh token support
-  refreshToken          String?          @unique
+  refreshToken          String?              @unique
   refreshTokenExpiresAt DateTime?
   lastLoginAt           DateTime?
-  loginAttempts         Int              @default(0)
+  loginAttempts         Int                  @default(0)
   lockedUntil           DateTime?
 
   @@index([refreshToken])
@@ -131,6 +132,8 @@ model PurchaseOrderItem {
 
 model Invoice {
   id              Int                   @id @default(autoincrement())
+  invoiceNumber   String?               // Invoice number from vendor
+  vendorId        Int?                  // Denormalized for validation performance
   date            DateTime              @default(now())
   status          String                @default("PENDING") // PENDING, APPROVED, REJECTED
   totalAmount     Float                 @default(0)
@@ -145,6 +148,7 @@ model Invoice {
   purchaseOrderId Int?
   purchaseOrder   PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id])
   deliveryNotes   InvoiceDeliveryLink[]
+  validations     InvoiceValidation[]
 
   branchId     Int?
   branch       Branch?     @relation(fields: [branchId], references: [id])
@@ -153,6 +157,7 @@ model Invoice {
   costCenterId Int?
   costCenter   CostCenter? @relation(fields: [costCenterId], references: [id])
 
+  @@unique([invoiceNumber, vendorId])
   @@index([status])
   @@index([deletedAt])
   @@index([date])
@@ -160,6 +165,9 @@ model Invoice {
   @@index([branchId])
   @@index([departmentId])
   @@index([costCenterId])
+  @@index([invoiceNumber])
+  @@index([vendorId])
+  @@index([invoiceNumber, vendorId, deletedAt])
   @@index([status, deletedAt])
   @@index([status, date, deletedAt])        // Spending analytics
   @@index([status, departmentId, deletedAt]) // Department breakdown
@@ -390,4 +398,88 @@ model FileVersion {
 
   @@index([originalFileId])
   @@unique([originalFileId, versionNumber])
+}
+
+// ============================================
+// INVOICE VALIDATION MODELS
+// ============================================
+
+enum ValidationRuleType {
+  DUPLICATE_INVOICE_NUMBER
+  MISSING_INVOICE_NUMBER
+  AMOUNT_THRESHOLD_EXCEEDED
+  ROUND_AMOUNT_PATTERN
+  PO_AMOUNT_VARIANCE
+  PO_ITEM_MISMATCH
+  DELIVERY_NOTE_MISMATCH
+  PRICE_VARIANCE
+}
+
+enum ValidationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum ValidationStatus {
+  FLAGGED
+  REVIEWED
+  DISMISSED
+  OVERRIDDEN
+}
+
+model InvoiceValidation {
+  id          Int                  @id @default(autoincrement())
+  invoiceId   Int
+  invoice     Invoice              @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  ruleType    ValidationRuleType
+  severity    ValidationSeverity
+  status      ValidationStatus     @default(FLAGGED)
+  details     Json                 // Flexible validation details
+  metadata    Json?                // Additional context
+
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  reviewedAt  DateTime?
+  reviewedBy  Int?
+
+  override    ValidationOverride?
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([severity])
+  @@index([ruleType])
+  @@index([invoiceId, status])
+  @@index([status, severity, createdAt])
+}
+
+model ValidationRule {
+  id          Int                  @id @default(autoincrement())
+  ruleType    ValidationRuleType   @unique
+  name        String
+  description String
+  enabled     Boolean              @default(true)
+  severity    ValidationSeverity   @default(WARNING)
+  config      Json?                // Rule-specific configuration
+
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([enabled])
+}
+
+model ValidationOverride {
+  id           Int               @id @default(autoincrement())
+  validationId Int               @unique
+  validation   InvoiceValidation @relation(fields: [validationId], references: [id], onDelete: Cascade)
+
+  userId       Int
+  user         User              @relation(fields: [userId], references: [id])
+  reason       String            // Min 10 chars, required
+
+  createdAt    DateTime          @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
 }

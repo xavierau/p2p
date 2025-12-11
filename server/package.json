@@ -10,7 +10,9 @@
     "mcp": "npx ts-node src/mcp-stdio.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "benchmark": "npx ts-node src/tests/benchmarks/validation-performance.benchmark.ts",
+    "benchmark:report": "npx ts-node src/tests/benchmarks/generate-report.ts"
   },
   "keywords": [],
   "author": "",
@@ -36,6 +38,7 @@
     "zod": "^3.21.4"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.1.0",
     "@types/bcryptjs": "^2.4.2",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.13",

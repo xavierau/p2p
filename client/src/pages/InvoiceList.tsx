@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { invoiceService } from '@/services/invoiceService';
-import type { Invoice, InvoiceStatus } from '@/types';
+import { validationService } from '@/services/validationService';
+import type { Invoice, InvoiceStatus, InvoiceValidationSummary } from '@/types';
 import {
     Table,
     TableBody,
@@ -11,11 +12,51 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { LoadingSpinner, ErrorDisplay } from '@/components/common';
+import { AlertCircle, AlertTriangle } from 'lucide-react';
+
+/**
+ * Extended invoice type with validation summary
+ */
+interface InvoiceWithValidation extends Invoice {
+    validationSummary?: InvoiceValidationSummary;
+}
+
+/**
+ * Validation badge component to show validation issues
+ */
+interface ValidationBadgeProps {
+    validationSummary?: InvoiceValidationSummary;
+}
+
+const ValidationBadge: React.FC<ValidationBadgeProps> = ({ validationSummary }) => {
+    if (!validationSummary || validationSummary.flagCount === 0) {
+        return null;
+    }
+
+    const { flagCount, hasBlockingIssues } = validationSummary;
+
+    if (hasBlockingIssues) {
+        return (
+            <Badge variant="error" className="ml-2" title="Critical validation issues">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                {flagCount}
+            </Badge>
+        );
+    }
+
+    return (
+        <Badge variant="warning" className="ml-2" title="Validation warnings">
+            <AlertTriangle className="h-3 w-3 mr-1" />
+            {flagCount}
+        </Badge>
+    );
+};
 
 const InvoiceList: React.FC = () => {
-    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [invoices, setInvoices] = useState<InvoiceWithValidation[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +65,21 @@ const InvoiceList: React.FC = () => {
         setError(null);
         try {
             const response = await invoiceService.getInvoices();
-            setInvoices(response.data);
+
+            // Fetch validation summaries for all invoices in parallel
+            const invoicesWithValidations = await Promise.all(
+                response.data.map(async (invoice) => {
+                    try {
+                        const validationSummary = await validationService.getValidationSummary(invoice.id);
+                        return { ...invoice, validationSummary };
+                    } catch {
+                        // If validation fetch fails, just return invoice without validation
+                        return invoice;
+                    }
+                })
+            );
+
+            setInvoices(invoicesWithValidations);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to load invoices';
             setError(message);
@@ -115,10 +170,13 @@ const InvoiceList: React.FC = () => {
                             invoices.map((invoice) => (
                             <TableRow key={invoice.id}>
                                 <TableCell>
-                                                    <Link to={`/invoices/${invoice.id}`} className="text-primary hover:underline">
-                                                        {invoice.id}
-                                                    </Link>
-                                                </TableCell>
+                                    <div className="flex items-center">
+                                        <Link to={`/invoices/${invoice.id}`} className="text-primary hover:underline">
+                                            {invoice.id}
+                                        </Link>
+                                        <ValidationBadge validationSummary={invoice.validationSummary} />
+                                    </div>
+                                </TableCell>
                                 <TableCell>{new Date(invoice.date).toLocaleDateString()}</TableCell>
                                 <TableCell>${invoice.totalAmount.toFixed(2)}</TableCell>
                                 <TableCell>
@@ -129,7 +187,14 @@ const InvoiceList: React.FC = () => {
                                 <TableCell className="text-right space-x-2">
                                     {invoice.status === 'PENDING' && (
                                         <>
-                                            <Button size="sm" variant="outline" onClick={() => handleStatusChange(invoice.id, 'approve')} className="text-green-600 hover:text-green-700 hover:bg-green-50">
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => handleStatusChange(invoice.id, 'approve')}
+                                                className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                disabled={invoice.validationSummary?.hasBlockingIssues}
+                                                title={invoice.validationSummary?.hasBlockingIssues ? 'Cannot approve invoice with critical validation issues' : 'Approve invoice'}
+                                            >
                                                 Approve
                                             </Button>
                                             <Button size="sm" variant="outline" onClick={() => handleStatusChange(invoice.id, 'reject')} className="text-red-600 hover:text-red-700 hover:bg-red-50">
